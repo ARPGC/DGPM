@@ -3,7 +3,7 @@ const supabaseClient = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.s
 
 // --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', () => {
-    // 1. Force Light Mode Default
+    // 1. Force Light Mode
     if (localStorage.getItem('urja-theme') === 'dark') {
         document.documentElement.classList.add('dark');
     } else {
@@ -11,8 +11,9 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('urja-theme', 'light');
     }
 
-    // 2. Check Session (Only run on login page to avoid loops)
-    if (window.location.pathname.includes('login.html')) {
+    // 2. Check Session (ONLY if on the Login Page)
+    // This prevents the script from accidentally redirecting you if included on other pages
+    if (window.location.pathname.includes('login.html') || window.location.pathname === '/' || window.location.pathname.endsWith('/')) {
         checkSession();
     }
 });
@@ -23,7 +24,7 @@ async function checkSession() {
     
     if (session) {
         // User is logged in, find out their role and redirect
-        redirectUserBasedOnRole(session.user.id);
+        await redirectUserBasedOnRole(session.user.id);
     }
 }
 
@@ -36,6 +37,8 @@ async function redirectUserBasedOnRole(userId) {
 
     if (error || !user) {
         console.error("Role fetch error:", error);
+        // Fallback if role check fails
+        window.location.href = 'student.html'; 
         return;
     }
 
@@ -112,7 +115,7 @@ async function handleSignup(e) {
     } else {
         if (data.session) {
             showToast("Registration Successful!", 'success');
-            // Direct redirect for new signups
+            // Direct redirect for new signups (always students)
             setTimeout(() => window.location.href = 'student.html', 1500);
         } else {
             showToast("Success! Please check email to verify.", 'success');
