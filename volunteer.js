@@ -1,179 +1,229 @@
 // --- CONFIGURATION ---
 const supabaseClient = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
 let currentUser = null;
-let currentSport = null;
-let currentMatchId = null;
-let currentRaceData = []; // Stores local state for race results before saving
+let currentMatchId = null; // ID of the match currently being edited
 
 // --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', async () => {
     lucide.createIcons();
     await checkVolunteerAuth();
-    loadVolunteerDashboard();
 });
 
-// --- 1. AUTHENTICATION ---
+// --- 1. AUTH CHECK ---
 async function checkVolunteerAuth() {
     const { data: { session } } = await supabaseClient.auth.getSession();
-    
     if (!session) {
         window.location.href = 'login.html';
         return;
     }
 
-    // Fetch Role & Assigned Sport
-    const { data: user, error } = await supabaseClient
+    // Verify Volunteer Role
+    const { data: user } = await supabaseClient
         .from('users')
-        .select('*, sports:assigned_sport_id(*)')
+        .select('role, first_name, last_name')
         .eq('id', session.user.id)
         .single();
 
-    if (error || !user || user.role !== 'volunteer') {
-        alert("ACCESS DENIED: Volunteer privileges required.");
-        await supabaseClient.auth.signOut();
-        window.location.href = 'login.html';
+    if (!user || (user.role !== 'volunteer' && user.role !== 'admin')) {
+        alert("Access Denied: Volunteers Only");
+        window.location.href = 'student.html';
         return;
     }
-
-    if (!user.assigned_sport_id) {
-        alert("No sport assigned to your account. Contact Admin.");
-        return;
-    }
-
-    currentUser = user;
-    currentSport = user.sports;
-
-    // UI Updates
-    document.getElementById('vol-name-display').innerText = `Hello, ${user.first_name}`;
-    document.getElementById('vol-sport-name').innerText = currentSport.name;
-    document.getElementById('vol-sport-type').innerText = currentSport.type;
-    document.getElementById('vol-sport-cat').innerText = currentSport.category.replace('_', ' ');
-}
-
-async function volunteerLogout() {
-    await supabaseClient.auth.signOut();
-    window.location.href = 'login.html';
-}
-
-// --- 2. MATCH LIST ---
-async function loadVolunteerMatches() {
-    const container = document.getElementById('vol-match-list');
-    container.innerHTML = '<div class="flex justify-center py-6"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary"></div></div>';
-
-    // Fetch matches for this sport only
-    const { data: matches, error } = await supabaseClient
-        .from('matches')
-        .select('*')
-        .eq('sport_id', currentSport.id)
-        .neq('status', 'Completed') // Optionally hide completed, or keep them
-        .order('start_time', { ascending: true });
-
-    if (error) {
-        container.innerHTML = `<p class="text-center text-red-500 text-sm">Error: ${error.message}</p>`;
-        return;
-    }
-
-    if (!matches || matches.length === 0) {
-        container.innerHTML = `
-            <div class="text-center py-10 bg-white rounded-2xl shadow-sm border border-gray-100">
-                <i data-lucide="check-circle-2" class="w-10 h-10 text-green-500 mx-auto mb-3"></i>
-                <h3 class="font-bold text-gray-800">All Caught Up!</h3>
-                <p class="text-xs text-gray-400">No active matches to manage.</p>
-            </div>`;
-        lucide.createIcons();
-        return;
-    }
-
-    container.innerHTML = matches.map(m => {
-        const isLive = m.status === 'Live';
-        const isRace = currentSport.category.includes('race');
-        
-        let cardContent = '';
-
-        if (isRace) {
-            // RACE UI CARD
-            const participantCount = m.race_details ? m.race_details.length : 0;
-            cardContent = `
-                <div class="flex justify-between items-center mb-2">
-                    <span class="text-xs font-bold text-gray-400 uppercase">${m.round_name}</span>
-                    <span class="text-[10px] font-bold bg-indigo-50 text-indigo-600 px-2 py-1 rounded border border-indigo-100">${participantCount} Runners</span>
-                </div>
-                <h4 class="font-black text-xl text-gray-800 mb-4">${currentSport.name}</h4>
-                <button onclick="openRaceModal('${m.id}')" class="w-full py-3 bg-black text-white font-bold rounded-xl shadow-lg hover:bg-gray-800 flex items-center justify-center gap-2">
-                    <i data-lucide="stopwatch" class="w-4 h-4"></i> Enter Results
-                </button>
-            `;
-        } else {
-            // KNOCKOUT UI CARD
-            cardContent = `
-                <div class="flex justify-between items-center mb-3">
-                    <span class="text-xs font-bold text-gray-400 uppercase">${m.round_name}</span>
-                    ${isLive 
-                        ? `<span class="flex items-center gap-1 text-[10px] font-bold text-red-500 animate-pulse"><span class="w-2 h-2 bg-red-500 rounded-full"></span> LIVE</span>` 
-                        : `<span class="text-[10px] font-bold text-gray-400 bg-gray-100 px-2 py-1 rounded">${m.status}</span>`
-                    }
-                </div>
-                <div class="flex items-center justify-between gap-2 mb-4">
-                    <div class="flex-1 text-center bg-gray-50 p-2 rounded-lg">
-                        <h4 class="font-bold text-sm leading-tight text-gray-900 truncate">${m.participant1_name || 'TBA'}</h4>
-                        <p class="text-2xl font-black text-brand-primary mt-1">${m.score1 || 0}</p>
-                    </div>
-                    <span class="text-xs font-bold text-gray-300">VS</span>
-                    <div class="flex-1 text-center bg-gray-50 p-2 rounded-lg">
-                        <h4 class="font-bold text-sm leading-tight text-gray-900 truncate">${m.participant2_name || 'TBA'}</h4>
-                        <p class="text-2xl font-black text-brand-primary mt-1">${m.score2 || 0}</p>
-                    </div>
-                </div>
-                <button onclick="openScoreModal('${m.id}')" class="w-full py-3 bg-white border-2 border-brand-primary text-brand-primary font-bold rounded-xl hover:bg-brand-primary hover:text-white transition-colors flex items-center justify-center gap-2">
-                    <i data-lucide="edit-3" class="w-4 h-4"></i> Update Score
-                </button>
-            `;
-        }
-
-        return `<div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">${cardContent}</div>`;
-    }).join('');
     
-    lucide.createIcons();
-}
-
-// Wrapper to load dashboard on init
-function loadVolunteerDashboard() {
+    currentUser = user;
+    document.getElementById('vol-name-display').innerText = `Welcome, ${user.first_name}`;
+    
     loadVolunteerMatches();
 }
 
-// --- 3. LOGIC: KNOCKOUT SCORING ---
+function volunteerLogout() {
+    supabaseClient.auth.signOut();
+    window.location.href = 'login.html';
+}
 
-async function openScoreModal(matchId) {
+// --- 2. MATCH LISTING ---
+async function loadVolunteerMatches() {
+    const container = document.getElementById('vol-match-list');
+    container.innerHTML = '<div class="flex flex-col items-center justify-center py-10 text-gray-400"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary mb-2"></div><p class="text-sm">Fetching assignments...</p></div>';
+
+    // Fetch matches that are NOT completed yet
+    const { data: matches } = await supabaseClient
+        .from('matches')
+        .select('*, sports(name, type, is_performance, unit)')
+        .neq('status', 'Completed') 
+        .order('start_time', { ascending: true });
+
+    if (!matches || matches.length === 0) {
+        container.innerHTML = '<div class="text-center py-10"><p class="text-gray-400 font-bold">No active matches assigned.</p></div>';
+        return;
+    }
+
+    // Update Header Card with first match info (just for UI flair)
+    if(matches.length > 0) {
+        document.getElementById('vol-sport-name').innerText = matches[0].sports.name;
+        document.getElementById('vol-sport-type').innerText = matches[0].sports.type;
+        document.getElementById('vol-sport-cat').innerText = matches[0].sports.is_performance ? 'Event' : 'Match';
+        document.getElementById('sport-card').classList.remove('hidden');
+    }
+
+    container.innerHTML = matches.map(m => {
+        const isPerf = m.sports.is_performance;
+        
+        return `
+        <div onclick="openMatchInterface('${m.id}')" class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm relative overflow-hidden group active:scale-[0.98] transition-transform cursor-pointer">
+            <div class="absolute top-0 left-0 w-1 h-full ${m.status === 'Live' ? 'bg-green-500' : 'bg-indigo-500'}"></div>
+            
+            <div class="flex justify-between items-start mb-3 pl-3">
+                <span class="text-[10px] font-bold uppercase tracking-widest text-gray-400">${m.sports.name}</span>
+                <span class="px-2 py-1 rounded text-[10px] font-bold uppercase ${m.status === 'Live' ? 'bg-green-100 text-green-700 animate-pulse' : 'bg-gray-100 text-gray-500'}">${m.status}</span>
+            </div>
+
+            <div class="pl-3">
+                ${isPerf ? 
+                    `<h4 class="font-black text-gray-900 text-lg leading-tight">PERFORMANCE ENTRY</h4>
+                     <p class="text-xs text-gray-500 mt-1 font-medium">Click to enter results for all participants</p>`
+                : 
+                    `<div class="flex justify-between items-center text-center">
+                        <h4 class="font-black text-gray-900 text-base leading-tight w-1/3 text-left">${m.team1_name}</h4>
+                        <div class="text-xs font-bold text-gray-300">VS</div>
+                        <h4 class="font-black text-gray-900 text-base leading-tight w-1/3 text-right">${m.team2_name}</h4>
+                    </div>
+                    <div class="mt-3 pt-3 border-t border-gray-50 flex justify-between text-xs font-bold text-brand-primary">
+                        <span>Score: ${m.score1 || 0}</span>
+                        <span>Score: ${m.score2 || 0}</span>
+                    </div>`
+                }
+            </div>
+        </div>
+    `}).join('');
+}
+
+// --- 3. INTERFACE ROUTER ---
+window.openMatchInterface = async function(matchId) {
     currentMatchId = matchId;
     
-    // Fetch latest data for this match
-    const { data: match } = await supabaseClient.from('matches').select('*').eq('id', matchId).single();
-    
-    document.getElementById('score-modal-round').innerText = match.round_name;
-    document.getElementById('score-p1-name').innerText = match.participant1_name;
-    document.getElementById('score-p2-name').innerText = match.participant2_name;
-    document.getElementById('score-input-p1').value = match.score1 || 0;
-    document.getElementById('score-input-p2').value = match.score2 || 0;
-    
-    // Populate Winner Dropdown
-    const select = document.getElementById('winner-select');
-    select.innerHTML = '<option value="">Select Winner...</option>';
-    
-    if(match.participant1_id) {
-        const opt1 = document.createElement('option');
-        opt1.value = match.participant1_id; // Using ID for logic
-        opt1.text = match.participant1_name;
-        select.add(opt1);
+    // Fetch fresh details
+    const { data: match } = await supabaseClient
+        .from('matches')
+        .select('*, sports(is_performance, unit)')
+        .eq('id', matchId)
+        .single();
+
+    if (match.sports.is_performance) {
+        // OPEN RACE INTERFACE
+        renderRaceTable(match);
+    } else {
+        // OPEN SCOREBOARD INTERFACE
+        renderScoreboard(match);
     }
-    if(match.participant2_id) {
-        const opt2 = document.createElement('option');
-        opt2.value = match.participant2_id;
-        opt2.text = match.participant2_name;
-        select.add(opt2);
+}
+
+// --- 4. RACE / PERFORMANCE LOGIC ---
+
+function renderRaceTable(match) {
+    const list = match.performance_data || []; // Array of {name, result, id}
+    const container = document.getElementById('race-rows-container');
+    const unit = match.sports.unit || 'Points';
+
+    if(list.length === 0) {
+        container.innerHTML = '<p class="text-center text-gray-400 py-10">No participants found.</p>';
+    } else {
+        container.innerHTML = list.map((p, idx) => `
+            <div class="flex items-center gap-3 mb-2 p-3 bg-gray-50 rounded-xl border border-gray-100">
+                <span class="font-bold text-gray-400 w-6 text-center">${idx + 1}</span>
+                <div class="flex-1 min-w-0">
+                    <p class="font-bold text-sm text-gray-800 truncate">${p.name}</p>
+                </div>
+                <div class="relative">
+                    <input type="text" placeholder="0.00" 
+                        class="w-24 p-2 bg-white border border-gray-200 rounded-lg text-right font-mono font-bold text-sm outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all"
+                        value="${p.result || ''}" 
+                        onchange="updateRaceData('${match.id}', ${idx}, this.value)">
+                    <span class="absolute right-8 top-2.5 text-[10px] text-gray-400 font-bold pointer-events-none hidden">${unit}</span>
+                </div>
+            </div>
+        `).join('');
     }
 
-    // Live Toggle State
-    document.getElementById('match-live-toggle').checked = (match.status === 'Live');
+    // Bind Finalize Button
+    const btn = document.getElementById('btn-finalize-race');
+    btn.onclick = () => finalizeRace(match.id, match.sports.unit); // Pass unit for sorting logic
+
+    document.getElementById('modal-race-entry').classList.remove('hidden');
+}
+
+async function updateRaceData(matchId, index, value) {
+    // 1. Fetch current array state to avoid race conditions (simplified)
+    const { data } = await supabaseClient.from('matches').select('performance_data').eq('id', matchId).single();
+    let dataArr = data.performance_data;
+    
+    // 2. Update specific index
+    dataArr[index].result = value;
+    
+    // 3. Save back
+    await supabaseClient.from('matches').update({ performance_data: dataArr }).eq('id', matchId);
+}
+
+async function finalizeRace(matchId, unit) {
+    if (!confirm("⚠️ Are you sure? This will RANK everyone and LOCK the event.")) return;
+
+    const { data } = await supabaseClient.from('matches').select('performance_data').eq('id', matchId).single();
+    let arr = data.performance_data;
+
+    // Filter out empty results
+    let validEntries = arr.filter(p => p.result && p.result.trim() !== '');
+    let emptyEntries = arr.filter(p => !p.result || p.result.trim() === '');
+
+    // Sort Logic
+    // Time (Seconds) -> Lower is better
+    // Distance (Meters) -> Higher is better
+    const isDistance = unit === 'Meters' || unit === 'Points';
+    
+    validEntries.sort((a, b) => {
+        const valA = parseFloat(a.result) || 0;
+        const valB = parseFloat(b.result) || 0;
+        return isDistance ? (valB - valA) : (valA - valB);
+    });
+
+    // Assign Ranks
+    validEntries.forEach((p, i) => p.rank = i + 1);
+    
+    // Combine back
+    const finalArr = [...validEntries, ...emptyEntries];
+
+    // Winner Text
+    const winnerText = validEntries.length > 0 ? `1st: ${validEntries[0].name} (${validEntries[0].result})` : 'No Results';
+
+    await supabaseClient.from('matches').update({ 
+        performance_data: finalArr, 
+        status: 'Completed',
+        winner_text: winnerText,
+        is_live: false // Turn off live badge
+    }).eq('id', matchId);
+
+    showToast("Results Published!", "success");
+    closeModal('modal-race-entry');
+    loadVolunteerMatches(); // Refresh list
+}
+
+// --- 5. SCOREBOARD LOGIC (MATCHES) ---
+
+function renderScoreboard(match) {
+    document.getElementById('score-modal-round').innerText = match.sports.name;
+    
+    document.getElementById('score-p1-name').innerText = match.team1_name;
+    document.getElementById('score-p2-name').innerText = match.team2_name;
+    
+    document.getElementById('score-input-p1').value = match.score1 || 0;
+    document.getElementById('score-input-p2').value = match.score2 || 0;
+
+    // Populate Winner Dropdown
+    const select = document.getElementById('winner-select');
+    select.innerHTML = `
+        <option value="">Select Winner (Optional)</option>
+        <option value="${match.team1_id}">${match.team1_name}</option>
+        <option value="${match.team2_id}">${match.team2_name}</option>
+    `;
 
     document.getElementById('modal-score').classList.remove('hidden');
 }
@@ -181,169 +231,60 @@ async function openScoreModal(matchId) {
 window.adjustScore = function(team, delta) {
     const input = document.getElementById(`score-input-${team}`);
     let val = parseInt(input.value) || 0;
-    val = Math.max(0, val + delta); // Prevent negative
+    val = Math.max(0, val + delta); // Prevent negative scores
     input.value = val;
 }
 
 window.updateMatchScore = async function(isFinal) {
     const s1 = document.getElementById('score-input-p1').value;
     const s2 = document.getElementById('score-input-p2').value;
-    const isLive = document.getElementById('match-live-toggle').checked;
     const winnerId = document.getElementById('winner-select').value;
 
-    let updates = {
+    const updates = {
         score1: s1,
         score2: s2,
-        status: isLive ? 'Live' : 'Scheduled' // Default to Live or keep Scheduled
+        status: isFinal ? 'Completed' : 'Live',
+        is_live: !isFinal // If final, turn off live
     };
 
     if (isFinal) {
-        if (!winnerId) return showToast("⚠️ Please declare a winner first!", "error");
-        
-        const confirmEnd = confirm("Are you sure you want to END this match? This cannot be undone.");
-        if (!confirmEnd) return;
-
-        updates.status = 'Completed';
+        if (!winnerId) return alert("Please select a Winner before ending the match.");
         updates.winner_id = winnerId;
-        updates.is_live = false;
-    } else {
-        updates.is_live = isLive;
     }
 
     const { error } = await supabaseClient.from('matches').update(updates).eq('id', currentMatchId);
 
-    if (error) {
-        showToast("Error updating match", "error");
-    } else {
-        showToast(isFinal ? "Match Completed!" : "Score Updated", "success");
-        window.closeModal('modal-score');
+    if(error) showToast(error.message, "error");
+    else {
+        showToast(isFinal ? "Match Ended!" : "Score Updated!", "success");
+        closeModal('modal-score');
         loadVolunteerMatches();
     }
 }
 
-
-// --- 4. LOGIC: RACE RESULTS ---
-
-async function openRaceModal(matchId) {
-    currentMatchId = matchId;
-    
-    const { data: match } = await supabaseClient.from('matches').select('*').eq('id', matchId).single();
-    
-    // Parse existing details or empty array
-    currentRaceData = match.race_details || [];
-    
-    // Sort slightly to show those with results first? Or by name? Let's sort by name for easy finding
-    // But if results exist, sort by Rank
-    currentRaceData.sort((a, b) => {
-        if (a.rank && b.rank) return a.rank - b.rank;
-        return a.name.localeCompare(b.name);
-    });
-
-    renderRaceRows();
-
-    const isDist = currentSport.category === 'race_distance';
-    document.getElementById('race-metric-label').innerText = isDist ? "Dist (m)" : "Time (s)";
-    
-    document.getElementById('modal-race').classList.remove('hidden');
-}
-
-function renderRaceRows() {
-    const container = document.getElementById('race-list-container');
-    const isDist = currentSport.category === 'race_distance';
-
-    if (currentRaceData.length === 0) {
-        container.innerHTML = '<p class="text-center text-xs text-gray-400 py-4">No participants found. Admin must schedule/add players.</p>';
-        return;
-    }
-
-    container.innerHTML = currentRaceData.map((p, index) => `
-        <div class="grid grid-cols-12 gap-2 items-center bg-gray-50 p-2 rounded-xl mb-1 border border-gray-100">
-            <div class="col-span-1 text-center font-bold text-gray-400 text-xs">
-                ${p.rank ? `<span class="bg-brand-primary text-white w-5 h-5 flex items-center justify-center rounded-full text-[10px]">${p.rank}</span>` : '-'}
-            </div>
-            <div class="col-span-6">
-                <p class="font-bold text-sm text-gray-800 truncate">${p.name}</p>
-                <p class="text-[9px] text-gray-400 uppercase tracking-wide">${p.id.substring(0,6)}...</p>
-            </div>
-            <div class="col-span-5 relative">
-                <input type="number" step="0.01" 
-                    placeholder="${isDist ? 'Meters' : 'Seconds'}" 
-                    value="${p.metric || ''}" 
-                    onchange="updateLocalRaceData(${index}, this.value)"
-                    class="w-full bg-white border border-gray-200 rounded-lg p-2 text-right font-bold text-brand-primary outline-none focus:border-brand-primary text-sm">
-            </div>
-        </div>
-    `).join('');
-}
-
-window.updateLocalRaceData = function(index, value) {
-    currentRaceData[index].metric = value; // Store raw value
-}
-
-window.saveRaceResults = async function() {
-    // 1. Calculate Ranks based on Metric
-    // Filter out those with no metric
-    let activeParticipants = currentRaceData.filter(p => p.metric && p.metric > 0);
-    
-    // Sort logic
-    if (currentSport.category === 'race_distance') {
-        // Higher is better (Shotput, Jump)
-        activeParticipants.sort((a, b) => parseFloat(b.metric) - parseFloat(a.metric));
-    } else {
-        // Lower is better (Running)
-        activeParticipants.sort((a, b) => parseFloat(a.metric) - parseFloat(b.metric));
-    }
-
-    // Assign Ranks
-    activeParticipants.forEach((p, i) => {
-        p.rank = i + 1;
-    });
-
-    // Merge back into main list (keep non-participants with no rank)
-    // We update the original objects in `currentRaceData` because objects are passed by reference in filter? 
-    // Wait, filter creates a shallow copy array, but objects inside are refs. So modifying `p.rank` works.
-    
-    // Update DB
-    const { error } = await supabaseClient.from('matches').update({
-        race_details: currentRaceData, // This now contains ranks
-        status: 'Completed', // Auto-complete if results submitted? Or add a separate 'Finalize' button? Let's assume Publish = Done.
-        is_live: false
-    }).eq('id', currentMatchId);
-
-    if (error) {
-        showToast("Error saving results", "error");
-    } else {
-        showToast("Results Published!", "success");
-        window.closeModal('modal-race');
-        loadVolunteerMatches();
-    }
-}
-
-// --- UTILITIES ---
+// --- UTILS ---
 window.closeModal = (id) => document.getElementById(id).classList.add('hidden');
 
-window.showToast = function(msg, type='info') {
+function showToast(msg, type) {
     const t = document.getElementById('toast-container');
-    const content = document.getElementById('toast-content');
+    const txt = document.getElementById('toast-text');
     const icon = document.getElementById('toast-icon');
-    const text = document.getElementById('toast-text');
 
-    text.innerText = msg;
-    
-    if (type === 'error') {
-        content.classList.replace('bg-gray-900', 'bg-red-600');
-        icon.innerHTML = '<i data-lucide="alert-circle" class="w-5 h-5"></i>';
+    // Style updates
+    const content = document.getElementById('toast-content');
+    if (type === 'success') {
+        content.classList.remove('bg-gray-900');
+        content.classList.add('bg-green-600');
+        icon.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5"></i>';
     } else {
-        content.classList.replace('bg-red-600', 'bg-gray-900');
-        icon.innerHTML = '<i data-lucide="check-circle-2" class="w-5 h-5 text-green-400"></i>';
+        content.classList.remove('bg-green-600');
+        content.classList.add('bg-gray-900');
+        icon.innerHTML = '<i data-lucide="info" class="w-5 h-5"></i>';
     }
 
-    t.classList.remove('opacity-0', 'pointer-events-none');
-    t.classList.add('opacity-100');
+    txt.innerText = msg;
     lucide.createIcons();
 
-    setTimeout(() => {
-        t.classList.remove('opacity-100');
-        t.classList.add('opacity-0', 'pointer-events-none');
-    }, 3000);
+    t.classList.remove('opacity-0', 'translate-y-20');
+    setTimeout(() => t.classList.add('opacity-0', 'translate-y-20'), 3000);
 }
