@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Login | URJA 2026</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="config.js"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Outfit', 'sans-serif'] },
+                    colors: {
+                        brand: { primary: '#6366F1', secondary: '#EC4899', accent: '#F59E0B', success: '#10B981' }
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-gray-50 text-gray-900 antialiased min-h-screen flex items-center justify-center p-4 bg-[url('https://images.unsplash.com/photo-1517649763962-0c623066013b?w=1600&q=80')] bg-cover bg-center">
+
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm z-0"></div>
+
+    <a href="index.html" class="absolute top-6 left-6 z-20 flex items-center gap-2 text-white/80 hover:text-white transition-colors font-bold text-sm">
+        <i data-lucide="arrow-left" class="w-4 h-4"></i> Back to Home
+    </a>
+
+    <div class="bg-white w-full max-w-md rounded-3xl p-8 shadow-2xl border border-white/10 relative z-10 flex flex-col max-h-[90vh] animate-scale-in">
+        
+        <div id="auth-loading" class="hidden absolute inset-0 bg-white/90 z-20 flex flex-col items-center justify-center rounded-3xl">
+            <div class="animate-spin rounded-full h-10 w-10 border-t-2 border-brand-primary mb-2"></div>
+            <p class="text-sm font-bold animate-pulse text-brand-primary">Processing...</p>
+        </div>
+
+        <div class="text-center mb-6">
+            <h1 class="text-4xl font-black italic tracking-tighter text-gray-900">URJA <span class="text-brand-primary">2026</span></h1>
+            <p class="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">Unified Access Portal</p>
+        </div>
+
+        <div id="view-login" class="auth-view space-y-4 overflow-y-auto custom-scrollbar">
+            <h3 class="text-lg font-bold border-l-4 border-brand-primary pl-3">Portal Login</h3>
+            <p class="text-xs text-gray-400 mb-2">Students, Volunteers, and Admins login here.</p>
+
+            <form onsubmit="handleLogin(event)" class="space-y-4">
+                <div>
+                    <label class="text-xs font-bold text-gray-500 ml-1 mb-1 block">Email</label>
+                    <input type="email" id="login-email" placeholder="Enter your email" required class="input-field w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:border-brand-primary transition-all">
+                </div>
+                <div class="relative">
+                    <label class="text-xs font-bold text-gray-500 ml-1 mb-1 block">Password</label>
+                    <input type="password" id="login-pass" placeholder="Enter your password" required class="input-field w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:border-brand-primary transition-all">
+                    <button type="button" onclick="togglePass('login-pass')" class="absolute right-3 top-8 text-gray-400 hover:text-brand-primary transition"><i data-lucide="eye" class="w-4 h-4"></i></button>
+                </div>
+                
+                <div class="flex justify-end">
+                    <button type="button" onclick="switchAuthView('forgot')" class="text-xs text-brand-primary font-bold hover:underline">Forgot Password?</button>
+                </div>
+
+                <button type="submit" class="w-full py-3.5 bg-gradient-to-r from-brand-primary to-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-brand-primary/30 active:scale-95 transition-transform transform hover:-translate-y-0.5">
+                    Secure Login
+                </button>
+            </form>
+            
+            <div class="pt-4 border-t border-gray-100 text-center">
+                <p class="text-xs text-gray-500">New Student?</p>
+                <button onclick="switchAuthView('signup')" class="text-sm font-bold text-brand-primary hover:underline mt-1">Create Account</button>
+            </div>
+        </div>
+
+        <div id="view-signup" class="auth-view hidden space-y-3 overflow-y-auto custom-scrollbar">
+            <h3 class="text-lg font-bold border-l-4 border-brand-secondary pl-3">Student Registration</h3>
+            <p class="text-xs text-gray-400 mb-2">Only students need to sign up. Staff is added by Admin.</p>
+            
+            <form onsubmit="handleSignup(event)" class="space-y-3">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <input type="text" id="reg-fname" placeholder="First Name" required class="input-field w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:border-brand-primary transition-all">
+                    </div>
+                    <div>
+                        <input type="text" id="reg-lname" placeholder="Last Name" required class="input-field w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:border-brand-primary transition-all">
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <input type="text" id="reg-sid" placeholder="Student ID" required class="input-field w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:border-brand-primary transition-all">
+                    <input type="text" id="reg-course" placeholder="Course (e.g. BMS)" required class="input-field w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:border-brand-primary transition-all">
+                </div>
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <select id="reg-class" required class="input-field w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:border-brand-primary transition-all cursor-pointer appearance-none bg-white">
+                        <option value="" disabled selected>Select Class</option>
+                        <option value="FY">FY</option>
+                        <option value="SY">SY</option>
+                        <option value="TY">TY</option>
+                    </select>
+                    <select id="reg-gender" required class="input-field w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:border-brand-primary transition-all cursor-pointer appearance-none bg-white">
+                        <option value="" disabled selected>Gender</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+
+                <input type="tel" id="reg-mobile" placeholder="Mobile Number (10 digits)" required class="input-field w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:border-brand-primary transition-all" pattern="[0-9]{10}" title="Please enter a valid 10-digit mobile number">
+
+                <input type="email" id="reg-email" placeholder="Email Address" required class="input-field w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:border-brand-primary transition-all">
+                
+                <div class="relative">
+                    <input type="password" id="reg-pass" placeholder="Create Password (Min 6 chars)" required class="input-field w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:border-brand-primary transition-all" minlength="6">
+                    <button type="button" onclick="togglePass('reg-pass')" class="absolute right-3 top-3 text-gray-400 hover:text-brand-primary transition"><i data-lucide="eye" class="w-4 h-4"></i></button>
+                </div>
+                
+                <button type="submit" class="w-full py-3.5 bg-gradient-to-r from-brand-secondary to-pink-700 text-white font-bold rounded-xl shadow-lg shadow-brand-secondary/30 active:scale-95 transition-transform mt-2 transform hover:-translate-y-0.5">Sign Up</button>
+            </form>
+            
+            <div class="text-center mt-2">
+                <button onclick="switchAuthView('login')" class="text-xs font-bold text-gray-500 hover:text-brand-primary">Back to Login</button>
+            </div>
+        </div>
+
+        <div id="view-forgot" class="auth-view hidden space-y-4">
+            <h3 class="text-lg font-bold border-l-4 border-gray-500 pl-3">Reset Password</h3>
+            <p class="text-sm text-gray-500">Enter your registered email address. We'll send you a secure link to reset your password.</p>
+            
+            <form onsubmit="handleForgotPass(event)" class="space-y-4">
+                <input type="email" id="forgot-email" placeholder="Email Address" required class="input-field w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:border-brand-primary transition-all">
+                <button type="submit" class="w-full py-3.5 bg-gray-800 text-white font-bold rounded-xl shadow-lg active:scale-95 transition-transform transform hover:-translate-y-0.5">Send Reset Link</button>
+            </form>
+
+            <div class="text-center mt-4">
+                <button onclick="switchAuthView('login')" class="text-xs font-bold text-gray-500 hover:text-brand-primary flex items-center justify-center gap-1 mx-auto">
+                    <i data-lucide="arrow-left" class="w-3 h-3"></i> Back to Login
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <div id="toast-container" class="fixed top-10 left-1/2 transform -translate-x-1/2 z-[100] w-full max-w-sm p-4 opacity-0 pointer-events-none transition-all duration-300">
+        <div id="toast-content" class="px-6 py-4 rounded-2xl shadow-2xl font-bold text-sm flex items-center gap-3 backdrop-blur-md border border-white/10">
+            <span id="toast-icon"></span>
+            <span id="toast-text"></span>
+        </div>
+    </div>
+
+    <script src="auth.js"></script>
+    <script>lucide.createIcons();</script>
+</body>
+</html>

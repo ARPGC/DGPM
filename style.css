@@ -1,0 +1,179 @@
+/* --- BASE & RESETS --- */
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
+
+html {
+    scroll-behavior: smooth; /* Enables smooth scrolling for Landing Page anchors */
+}
+
+body {
+    font-family: 'Outfit', sans-serif;
+    -webkit-tap-highlight-color: transparent; /* Removes grey tap highlight on mobile */
+    overscroll-behavior-y: none; /* Prevents pull-to-refresh on mobile apps */
+    
+    /* Smooth background transition for theme toggle */
+    transition: background-color 0.3s ease, color 0.3s ease;
+    background-color: #f9fafb; /* Light Mode Default (Gray-50) */
+}
+
+/* Dark Mode Base Overrides */
+.dark body {
+    background-color: #0B0F19; /* Deep Gray/Black for OLED feel */
+    color: #ffffff;
+}
+
+/* --- UTILITIES --- */
+
+/* Hide Scrollbar for clean aesthetics (Mobile App Feel) */
+::-webkit-scrollbar {
+    width: 0px;
+    background: transparent;
+}
+
+.custom-scrollbar {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+    display: none; /* Chrome, Safari, Opera */
+}
+
+/* Safe Area for iPhone Home Bar */
+.pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 20px);
+}
+
+/* --- ANIMATIONS --- */
+
+/* Slide Up (Optimized for Bottom Sheet Modal) */
+@keyframes slideUp {
+    from { 
+        transform: translateY(100%); 
+        opacity: 0.5; 
+    }
+    to { 
+        transform: translateY(0); 
+        opacity: 1; 
+    }
+}
+
+.animate-slide-up {
+    animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Fade In */
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.animate-fade-in {
+    animation: fadeIn 0.5s ease-out forwards;
+}
+
+/* Scale In (For small modals) */
+@keyframes scaleIn {
+    from { transform: scale(0.9); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+
+.animate-scale-in {
+    animation: scaleIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* --- NAVIGATION STYLES (Student Portal) --- */
+.nav-item {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+}
+
+.nav-item.active {
+    color: #6366f1; /* Brand Primary */
+}
+
+.nav-item.active i {
+    transform: translateY(-2px);
+    filter: drop-shadow(0 4px 6px rgba(99, 102, 241, 0.3));
+}
+
+/* --- CARD & GLASSMORPHISM --- */
+.glass-card {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.dark .glass-card {
+    background: rgba(31, 41, 55, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* --- LANDING PAGE HERO GRADIENT --- */
+.hero-gradient { 
+    background: linear-gradient(180deg, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.7) 100%); 
+}
+
+/* --- FORM & INPUT STYLES --- */
+
+/* Input Autofill Fix (Prevents yellow/white background from browser autofill) */
+
+/* Light Mode Input Autofill */
+input:-webkit-autofill,
+input:-webkit-autofill:hover, 
+input:-webkit-autofill:focus, 
+input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 30px white inset !important;
+    border-radius: 0.75rem;
+    transition: background-color 5000s ease-in-out 0s;
+}
+
+/* Dark Mode Input Autofill */
+.dark input:-webkit-autofill,
+.dark input:-webkit-autofill:hover, 
+.dark input:-webkit-autofill:focus, 
+.dark input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 30px #111827 inset !important;
+    -webkit-text-fill-color: white !important;
+    border-radius: 0.75rem;
+    transition: background-color 5000s ease-in-out 0s;
+}
+
+/* Custom Checkbox/Radio */
+.custom-radio:checked {
+    background-color: #6366f1;
+    border-color: #6366f1;
+    background-image: url("data:image/svg+xml,%3csvg viewBox='0 0 16 16' fill='white' xmlns='http://www.w3.org/2000/svg'%3e%3ccircle cx='8' cy='8' r='3'/%3e%3c/svg%3e");
+}
+
+/* --- LOADING SPINNER --- */
+.spinner {
+    width: 24px;
+    height: 24px;
+    border: 3px solid rgba(99, 102, 241, 0.2);
+    border-top: 3px solid #6366f1;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* --- MISC --- */
+.shimmer {
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
+/* Prevent text selection on buttons for better app feel */
+button {
+    user-select: none;
+    -webkit-user-select: none;
+}

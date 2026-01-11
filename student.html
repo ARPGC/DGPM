@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Student Portal | URJA 2026</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="config.js"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Outfit', 'sans-serif'] },
+                    colors: {
+                        brand: { primary: '#6366F1', secondary: '#EC4899' }
+                    },
+                    animation: {
+                        'scale-in': 'scaleIn 0.2s ease-out forwards',
+                        'slide-up': 'slideUp 0.3s ease-out forwards'
+                    },
+                    keyframes: {
+                        scaleIn: {
+                            '0%': { transform: 'scale(0.95)', opacity: '0' },
+                            '100%': { transform: 'scale(1)', opacity: '1' }
+                        },
+                        slideUp: {
+                            '0%': { transform: 'translateY(100%)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' }
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-gray-50 text-gray-900 pb-24 select-none transition-colors duration-300 dark:bg-gray-900 dark:text-white">
+
+    <header class="fixed top-0 w-full bg-white/90 backdrop-blur-md dark:bg-gray-900/90 border-b border-gray-100 dark:border-gray-800 z-40 px-4 py-4 flex justify-between items-center transition-colors duration-300">
+        <h1 class="text-xl font-black italic tracking-tighter text-gray-900 dark:text-white">URJA <span class="text-brand-primary">PORTAL</span></h1>
+        
+        <div class="flex items-center gap-2">
+            <button id="btn-theme-toggle" class="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" onclick="window.toggleTheme()">
+                <i data-lucide="moon" class="w-5 h-5 text-gray-600 dark:text-gray-300"></i>
+            </button>
+            <div onclick="window.switchTab('profile')" class="w-8 h-8 rounded-full bg-gray-200 overflow-hidden cursor-pointer border border-gray-200 dark:border-gray-700">
+                 <img id="header-avatar" src="https://t4.ftcdn.net/jpg/05/89/93/27/360_F_589932782_vQAEAZhHnq1QCGu5ikwrYaQD0Mmurm0N.jpg" class="w-full h-full object-cover">
+            </div>
+        </div>
+    </header>
+
+    <main id="app-content" class="pt-20 px-4 container mx-auto max-w-md h-full min-h-screen">
+        
+        <div id="view-home" class="view-section animate-fade-in">
+            <div class="relative w-full h-48 rounded-2xl overflow-hidden mb-6 shadow-md group border border-gray-100 dark:border-gray-800">
+                <img src="https://images.unsplash.com/photo-1517649763962-0c623066013b?q=80&w=2070&auto=format&fit=crop" class="w-full h-full object-cover brightness-50 transition-transform duration-700 group-hover:scale-105">
+                <div class="absolute inset-0 p-6 flex flex-col justify-center text-white">
+                    <span class="bg-white/20 backdrop-blur-md px-3 py-1 rounded-md text-[10px] font-bold uppercase w-fit mb-2 border border-white/20">Live Updates</span>
+                    <h2 class="text-3xl font-black italic leading-none mb-1">IGNITE THE</h2>
+                    <h2 class="text-3xl font-black italic leading-none text-brand-secondary">PASSION</h2>
+                    
+                    <div class="absolute bottom-4 right-4 w-12 h-12 rounded-full border-2 border-white/30 bg-black/40 backdrop-blur-md flex flex-col items-center justify-center shadow-lg">
+                        <span class="text-sm font-bold leading-none">2</span>
+                        <span class="text-[8px] uppercase">Days</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2 mb-3">
+                <i data-lucide="trophy" class="w-5 h-5 text-yellow-500"></i>
+                <h3 class="font-bold text-lg">Your Performance</h3>
+            </div>
+            
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 text-center mb-8 shadow-sm transition-colors">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <p class="text-[10px] font-bold text-gray-400 uppercase">Matches</p>
+                        <p class="text-2xl font-black text-gray-800 dark:text-white" id="stat-matches-played">0</p>
+                    </div>
+                    <div class="w-px h-8 bg-gray-100 dark:bg-gray-700"></div>
+                    <div>
+                        <p class="text-[10px] font-bold text-gray-400 uppercase">Wins</p>
+                        <p class="text-2xl font-black text-brand-primary" id="stat-wins">0</p>
+                    </div>
+                    <div class="w-px h-8 bg-gray-100 dark:bg-gray-700"></div>
+                    <div>
+                        <p class="text-[10px] font-bold text-gray-400 uppercase">Rank</p>
+                        <p class="text-2xl font-black text-gray-800 dark:text-white">-</p>
+                    </div>
+                </div>
+            </div>
+
+            <h3 class="font-bold text-lg mb-3 flex items-center gap-2"><i data-lucide="zap" class="w-5 h-5 text-brand-primary"></i> Live Highlights</h3>
+            <div class="grid grid-cols-2 gap-3">
+                <div class="h-32 rounded-xl bg-gray-200 dark:bg-gray-700 overflow-hidden relative shadow-sm group">
+                    <img src="https://images.unsplash.com/photo-1579952363873-27f3bade9f55?q=80&w=1000&auto=format&fit=crop" class="w-full h-full object-cover opacity-80 group-hover:scale-110 transition-all duration-500">
+                    <div class="absolute bottom-2 left-2 bg-black/50 p-1.5 rounded-full backdrop-blur-sm"><i data-lucide="play" class="w-4 h-4 text-white"></i></div>
+                </div>
+                <div class="h-32 rounded-xl bg-gray-200 dark:bg-gray-700 overflow-hidden relative shadow-sm group">
+                    <img src="https://images.unsplash.com/photo-1530549387789-4c1017266635?q=80&w=1000&auto=format&fit=crop" class="w-full h-full object-cover opacity-80 group-hover:scale-110 transition-all duration-500">
+                    <div class="absolute bottom-2 left-2 bg-black/50 p-1.5 rounded-full backdrop-blur-sm"><i data-lucide="play" class="w-4 h-4 text-white"></i></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="view-schedule" class="view-section hidden animate-fade-in">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-bold">Schedule Center</h2>
+                
+                <div class="bg-gray-200 dark:bg-gray-800 p-1 rounded-lg flex text-xs font-bold shadow-inner">
+                    <button id="btn-schedule-upcoming" onclick="window.filterSchedule('upcoming')" class="px-4 py-1.5 bg-white dark:bg-gray-700 rounded shadow-sm text-brand-primary dark:text-white transition-all">Upcoming</button>
+                    <button id="btn-schedule-results" onclick="window.filterSchedule('results')" class="px-4 py-1.5 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-all">Results</button>
+                </div>
+            </div>
+
+            <div id="schedule-list" class="flex flex-col items-center justify-center py-20 text-center">
+                <div class="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-3">
+                    <i data-lucide="calendar-off" class="w-8 h-8 text-gray-400"></i>
+                </div>
+                <p class="text-gray-400 font-medium">No matches scheduled.</p>
+            </div>
+        </div>
+
+        <div id="view-teams" class="view-section hidden animate-fade-in">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-bold">Team Manager</h2>
+            </div>
+
+            <div class="bg-gray-200 dark:bg-gray-800 p-1 rounded-lg flex text-sm font-bold mb-6 shadow-inner">
+                <button onclick="window.toggleTeamView('marketplace')" id="btn-team-market" class="flex-1 py-2 rounded shadow-sm bg-white dark:bg-gray-700 text-brand-primary dark:text-white transition-all">Join Teams</button>
+                <button onclick="window.toggleTeamView('locker')" id="btn-team-locker" class="flex-1 py-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 transition-all">My Teams</button>
+            </div>
+
+            <div id="team-marketplace">
+                 <div class="relative mb-6">
+                    <select id="team-sport-filter" class="w-full p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm outline-none font-bold appearance-none transition-colors shadow-sm focus:border-brand-primary" onchange="window.loadTeamMarketplace()">
+                        <option value="all">All Sports</option>
+                    </select>
+                    <i data-lucide="chevron-down" class="absolute right-4 top-4 w-5 h-5 text-gray-400 pointer-events-none"></i>
+                 </div>
+
+                <div id="marketplace-list" class="space-y-3">
+                    <p class="text-center text-gray-400 py-10">Loading...</p>
+                </div>
+            </div>
+
+            <div id="team-locker" class="hidden">
+                 <button onclick="window.openCreateTeamModal()" class="w-full py-4 border-2 border-dashed border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 font-bold rounded-xl mb-4 hover:bg-white dark:hover:bg-gray-800 hover:border-brand-primary hover:text-brand-primary transition-all flex items-center justify-center gap-2">
+                    <i data-lucide="plus-circle" class="w-5 h-5"></i> Create New Team
+                 </button>
+                <div id="locker-list" class="space-y-3">
+                    <p class="text-center text-gray-400 py-10">No teams found.</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="view-register" class="view-section hidden animate-fade-in">
+            <div class="bg-gray-200 dark:bg-gray-800 p-1 rounded-xl flex text-sm font-bold mb-6 shadow-inner">
+                <button onclick="window.toggleRegisterView('new')" id="btn-reg-new" class="flex-1 py-3 rounded-lg shadow-sm bg-white dark:bg-gray-700 text-brand-primary dark:text-white transition-all">New Registration</button>
+                <button onclick="window.toggleRegisterView('history')" id="btn-reg-history" class="flex-1 py-3 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-all">My History</button>
+            </div>
+
+            <div id="reg-section-new">
+                <div class="mb-4">
+                    <h2 class="text-xl font-bold mb-1 text-gray-900 dark:text-white">All Games</h2>
+                    <p class="text-xs text-gray-400 dark:text-gray-500">Select a sport to register</p>
+                </div>
+
+                <div class="sticky top-20 z-30 bg-gray-50 dark:bg-gray-900 pb-4 transition-colors">
+                    <div class="relative">
+                        <i data-lucide="search" class="absolute left-4 top-3.5 w-5 h-5 text-gray-400"></i>
+                        <input type="text" id="search-input" placeholder="Search sports..." class="w-full pl-12 pr-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl focus:outline-none focus:border-brand-primary shadow-sm text-sm dark:text-white transition-all" onkeyup="window.filterSports()">
+                    </div>
+                </div>
+
+                <div id="sports-list" class="grid grid-cols-2 gap-3 pb-8">
+                    </div>
+            </div>
+
+            <div id="reg-section-history" class="hidden">
+                <div id="history-list" class="space-y-3 pb-8">
+                    </div>
+            </div>
+        </div>
+
+        <div id="view-profile" class="view-section hidden animate-fade-in w-full">
+            
+            <div class="relative mb-16 -mx-4 shadow-md">
+                <div class="h-48 w-full relative">
+                    <img src="https://images.unsplash.com/photo-1551958219-acbc608c6377?q=80&w=2070&auto=format&fit=crop" class="w-full h-full object-cover">
+                    <div class="absolute inset-0 bg-brand-primary/20 mix-blend-overlay"></div>
+                    <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
+                    
+                    <button onclick="window.openSettingsModal()" class="absolute top-4 right-4 p-2 bg-white/20 backdrop-blur-md rounded-full text-white hover:bg-white/30 transition-colors border border-white/20">
+                        <i data-lucide="settings" class="w-5 h-5"></i>
+                    </button>
+                </div>
+
+                <div class="absolute -bottom-12 left-1/2 transform -translate-x-1/2">
+                    <div class="relative">
+                        <div class="w-24 h-24 rounded-full border-[4px] border-white dark:border-gray-900 overflow-hidden bg-white shadow-xl transition-colors">
+                            <img id="profile-img" src="https://t4.ftcdn.net/jpg/05/89/93/27/360_F_589932782_vQAEAZhHnq1QCGu5ikwrYaQD0Mmurm0N.jpg" class="w-full h-full object-cover">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="text-center px-4 mb-6">
+                <h2 id="profile-name" class="text-2xl font-black text-gray-900 dark:text-white mb-1">Student Name</h2>
+                <p id="profile-details" class="text-gray-500 dark:text-gray-400 font-bold text-sm uppercase tracking-wide mb-8">Class • ID</p>
+                
+                <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-5 flex justify-between items-center mb-8 mx-0 transition-colors">
+                    <div class="flex-1 text-center border-r border-gray-100 dark:border-gray-700">
+                        <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Gold</p>
+                        <p class="text-2xl font-black text-yellow-500">0</p>
+                    </div>
+                    <div class="flex-1 text-center border-r border-gray-100 dark:border-gray-700">
+                        <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Silver</p>
+                        <p class="text-2xl font-black text-gray-400">0</p>
+                    </div>
+                    <div class="flex-1 text-center">
+                        <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Bronze</p>
+                        <p class="text-2xl font-black text-orange-700">0</p>
+                    </div>
+                </div>
+
+                <div class="text-left px-0">
+                    <div class="flex items-center gap-2 mb-4">
+                        <i data-lucide="layout-list" class="w-5 h-5 text-brand-primary"></i>
+                        <h3 class="font-bold text-lg">All Registered Games</h3>
+                    </div>
+                    
+                    <div id="my-registrations-list" class="space-y-3">
+                         <p class="text-gray-400 text-sm text-center py-4">No games found.</p>
+                    </div>
+                </div>
+
+                <div class="px-0 mt-8 mb-4">
+                    <button onclick="window.logout()" class="w-full py-4 border border-red-200 dark:border-red-900 text-red-500 font-bold rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors bg-white dark:bg-gray-800 shadow-sm">Logout</button>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <nav class="fixed bottom-0 w-full bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800 pb-safe z-50 transition-colors duration-300">
+        <div class="flex justify-around items-center h-16 px-1">
+            <button onclick="window.switchTab('home')" id="nav-home" class="nav-item active flex flex-col items-center gap-1 w-1/5">
+                <i data-lucide="home" class="w-5 h-5"></i>
+                <span class="text-[10px] font-medium">Home</span>
+            </button>
+            <button onclick="window.switchTab('schedule')" id="nav-schedule" class="nav-item flex flex-col items-center gap-1 w-1/5 text-gray-400">
+                <i data-lucide="calendar" class="w-5 h-5"></i>
+                <span class="text-[10px] font-medium">Schedule</span>
+            </button>
+            <button onclick="window.switchTab('teams')" id="nav-teams" class="nav-item flex flex-col items-center gap-1 w-1/5 text-gray-400">
+                <i data-lucide="users" class="w-5 h-5"></i>
+                <span class="text-[10px] font-medium">Teams</span>
+            </button>
+            <button onclick="window.switchTab('register')" id="nav-register" class="nav-item flex flex-col items-center gap-1 w-1/5 text-gray-400">
+                <i data-lucide="clipboard-edit" class="w-5 h-5"></i>
+                <span class="text-[10px] font-medium">Register</span>
+            </button>
+            <button onclick="window.switchTab('profile')" id="nav-profile" class="nav-item flex flex-col items-center gap-1 w-1/5 text-gray-400">
+                <i data-lucide="user" class="w-5 h-5"></i>
+                <span class="text-[10px] font-medium">Profile</span>
+            </button>
+        </div>
+    </nav>
+
+    <div id="modal-register" class="fixed inset-0 z-[60] bg-black/60 hidden flex items-end justify-center backdrop-blur-sm sm:items-center">
+        <div class="absolute inset-0" onclick="window.closeModal('modal-register')"></div>
+        <div class="bg-white dark:bg-gray-800 w-full max-w-sm rounded-t-3xl sm:rounded-2xl p-6 shadow-2xl animate-slide-up transition-colors relative z-10">
+            <div class="w-10 h-1 bg-gray-300 dark:bg-gray-600 rounded-full mx-auto mb-6"></div>
+            <h2 id="reg-modal-sport-name" class="text-3xl font-black italic text-gray-900 dark:text-white mb-6">Sport Name</h2>
+            
+            <div class="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-100 dark:border-gray-700 mb-6">
+                <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">PARTICIPANT</span>
+                <h3 id="reg-modal-user-name" class="text-lg font-bold text-gray-900 dark:text-white">Student Name</h3>
+                <p id="reg-modal-user-details" class="text-xs text-gray-500 dark:text-gray-400 font-medium">Class • ID</p>
+            </div>
+
+            <p class="text-center text-xs text-gray-500 dark:text-gray-400 mb-6 px-2 leading-relaxed">
+                Step 1: Confirm your individual entry for <span id="reg-modal-sport-name-span" class="font-bold text-gray-800 dark:text-gray-200">Sport</span>.<br>
+                (You can join or create a team after this step)
+            </p>
+
+            <input type="hidden" id="reg-mobile">
+
+            <button type="button" onclick="window.confirmRegistration()" class="w-full py-4 bg-brand-primary text-white font-bold rounded-xl shadow-lg shadow-indigo-200 dark:shadow-none active:scale-95 transition-transform text-sm">
+                Confirm Registration
+            </button>
+        </div>
+    </div>
+
+    <div id="modal-create-team" class="fixed inset-0 z-[60] bg-black/60 hidden flex items-end sm:items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-white dark:bg-gray-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl animate-slide-up transition-colors">
+            <h3 class="text-xl font-black mb-6 dark:text-white">Create New Team</h3>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="text-[10px] font-bold text-gray-500 uppercase tracking-widest block mb-2">Team Name</label>
+                    <input type="text" id="new-team-name" placeholder="e.g. RCB" class="w-full p-3.5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm font-bold outline-none focus:border-brand-primary dark:text-white transition-all shadow-sm">
+                </div>
+
+                <div>
+                    <label class="text-[10px] font-bold text-gray-500 uppercase tracking-widest block mb-2">Sport</label>
+                    <div class="relative">
+                        <select id="new-team-sport" class="w-full p-3.5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm font-bold outline-none appearance-none dark:text-white transition-all shadow-sm focus:border-brand-primary"></select>
+                        <i data-lucide="chevron-down" class="absolute right-3.5 top-4 w-4 h-4 text-gray-400 pointer-events-none"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex gap-3 mt-8">
+                <button onclick="window.closeModal('modal-create-team')" class="flex-1 py-3.5 bg-gray-100 dark:bg-gray-700 font-bold rounded-xl text-gray-600 dark:text-gray-300 hover:bg-gray-200 transition-colors">Cancel</button>
+                <button onclick="window.createTeam()" class="flex-1 py-3.5 bg-brand-primary text-white font-bold rounded-xl shadow-lg shadow-indigo-200 dark:shadow-none active:scale-95 transition-transform">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-view-squad" class="fixed inset-0 z-[60] bg-black/50 hidden flex items-end sm:items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-white dark:bg-gray-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl animate-slide-up transition-colors">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold dark:text-white">Team Squad</h3>
+                <button onclick="window.closeModal('modal-view-squad')"><i data-lucide="x" class="w-5 h-5 text-gray-400"></i></button>
+            </div>
+            <div id="view-squad-list" class="space-y-3 mb-6 max-h-60 overflow-y-auto custom-scrollbar">
+                </div>
+             <button id="btn-confirm-join" class="w-full py-3 bg-black dark:bg-white dark:text-black text-white font-bold rounded-xl shadow-lg">Confirm Join Request</button>
+        </div>
+    </div>
+
+    <div id="modal-manage-team" class="fixed inset-0 z-[60] bg-black/50 hidden flex items-end sm:items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-white dark:bg-gray-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl animate-slide-up transition-colors">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold dark:text-white" id="manage-team-title">Manage Team</h3>
+                <button onclick="window.closeModal('modal-manage-team')"><i data-lucide="x" class="w-5 h-5 text-gray-400"></i></button>
+            </div>
+            
+            <div class="mb-4">
+                <h4 class="text-xs font-bold text-gray-500 uppercase mb-2">Pending Requests</h4>
+                <div id="manage-requests-list" class="space-y-2">
+                    <p class="text-xs text-gray-400">No pending requests.</p>
+                </div>
+            </div>
+
+            <div class="mb-6">
+                <h4 class="text-xs font-bold text-gray-500 uppercase mb-2">Current Members</h4>
+                <div id="manage-members-list" class="space-y-2 max-h-40 overflow-y-auto custom-scrollbar"></div>
+            </div>
+            
+            <button onclick="window.closeModal('modal-manage-team')" class="w-full py-3 bg-gray-100 dark:bg-gray-700 font-bold rounded-xl text-gray-600 dark:text-gray-300">Close</button>
+        </div>
+    </div>
+
+    <div id="modal-settings" class="fixed inset-0 z-[60] bg-black/60 hidden flex items-end justify-center backdrop-blur-sm sm:items-center">
+        <div class="absolute inset-0" onclick="window.closeModal('modal-settings')"></div>
+        <div class="bg-white dark:bg-gray-800 w-full max-w-sm rounded-t-3xl sm:rounded-2xl p-6 shadow-2xl animate-slide-up transition-colors relative z-10">
+            
+            <div class="w-10 h-1 bg-gray-300 dark:bg-gray-600 rounded-full mx-auto mb-4"></div>
+            
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-xl font-bold dark:text-white">Edit Profile</h3>
+            </div>
+
+            <div class="space-y-4 max-h-[70vh] overflow-y-auto custom-scrollbar pr-1">
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-500 uppercase block mb-1">First Name</label>
+                        <input type="text" id="edit-fname" placeholder="First Name" class="w-full p-3 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 rounded-xl text-sm font-bold dark:text-white focus:border-brand-primary outline-none transition-colors">
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-500 uppercase block mb-1">Last Name</label>
+                        <input type="text" id="edit-lname" placeholder="Last Name" class="w-full p-3 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 rounded-xl text-sm font-bold dark:text-white focus:border-brand-primary outline-none transition-colors">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="text-[10px] font-bold text-gray-500 uppercase block mb-1">Email ID</label>
+                    <input type="email" id="edit-email" readonly class="w-full p-3 border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 rounded-xl text-sm font-medium text-gray-400 dark:text-gray-500 cursor-not-allowed select-none">
+                </div>
+
+                <div>
+                    <label class="text-[10px] font-bold text-gray-500 uppercase block mb-1">Mobile Number</label>
+                    <input type="tel" id="edit-mobile" placeholder="Mobile" class="w-full p-3 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 rounded-xl text-sm font-bold dark:text-white focus:border-brand-primary outline-none transition-colors">
+                </div>
+
+                <div class="grid grid-cols-3 gap-3">
+                    <div class="col-span-1">
+                        <label class="text-[10px] font-bold text-gray-500 uppercase block mb-1">Class</label>
+                        <select id="edit-class" class="w-full p-3 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 rounded-xl text-sm font-bold dark:text-white outline-none">
+                            <option>FY</option><option>SY</option><option>TY</option>
+                        </select>
+                    </div>
+                    <div class="col-span-2">
+                        <label class="text-[10px] font-bold text-gray-500 uppercase block mb-1">Student ID</label>
+                        <input type="text" id="edit-sid" class="w-full p-3 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 rounded-xl text-sm font-bold dark:text-white focus:border-brand-primary outline-none">
+                    </div>
+                </div>
+                
+                <div>
+                    <label class="text-[10px] font-bold text-gray-500 uppercase block mb-1">Gender</label>
+                    <select id="edit-gender" class="w-full p-3 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 rounded-xl text-sm font-bold dark:text-white outline-none">
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                    </select>
+                </div>
+
+                <button onclick="window.updateProfile()" class="w-full py-3.5 bg-black dark:bg-brand-primary text-white font-bold rounded-xl shadow-lg mt-2 active:scale-95 transition-transform">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-match-details" class="fixed inset-0 z-[80] bg-black/60 hidden flex items-end sm:items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-white dark:bg-gray-800 w-full max-w-lg rounded-2xl p-6 shadow-2xl animate-slide-up transition-colors max-h-[85vh] flex flex-col">
+            <div class="flex justify-between items-center mb-4 border-b border-gray-100 dark:border-gray-700 pb-3">
+                <div>
+                    <h3 id="md-sport-name" class="text-xl font-black italic uppercase text-gray-900 dark:text-white">SPORT NAME</h3>
+                    <p id="md-match-status" class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Status</p>
+                </div>
+                <button onclick="window.closeModal('modal-match-details')" class="p-2 bg-gray-100 dark:bg-gray-700 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600">
+                    <i data-lucide="x" class="w-5 h-5 text-gray-500 dark:text-gray-300"></i>
+                </button>
+            </div>
+    
+            <div class="overflow-y-auto custom-scrollbar flex-1">
+                
+                <div id="md-layout-team" class="hidden">
+                    <div class="flex items-center justify-between bg-gray-50 dark:bg-gray-900/50 rounded-xl p-4 mb-6 border border-gray-100 dark:border-gray-700">
+                        <div class="text-center w-1/3">
+                            <h4 id="md-t1-name" class="font-bold text-sm md:text-base leading-tight dark:text-white break-words">Team A</h4>
+                            <p id="md-t1-score" class="text-3xl font-black text-brand-primary mt-1">0</p>
+                        </div>
+                        <div class="text-center w-1/3">
+                            <span class="text-xs font-bold text-gray-400 uppercase">VS</span>
+                        </div>
+                        <div class="text-center w-1/3">
+                            <h4 id="md-t2-name" class="font-bold text-sm md:text-base leading-tight dark:text-white break-words">Team B</h4>
+                            <p id="md-t2-score" class="text-3xl font-black text-brand-primary mt-1">0</p>
+                        </div>
+                    </div>
+    
+                    <h4 class="text-xs font-bold text-gray-500 uppercase mb-3 flex items-center gap-2">
+                        <i data-lucide="users" class="w-4 h-4"></i> Team Squads
+                    </h4>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="bg-gray-50 dark:bg-gray-700/30 rounded-xl p-3">
+                            <p id="md-list-t1-title" class="text-[10px] font-bold text-gray-400 uppercase mb-2 border-b border-gray-200 dark:border-gray-600 pb-1 truncate">Team A</p>
+                            <div id="md-list-t1" class="space-y-2">
+                                <p class="text-xs text-gray-400 italic">Loading...</p>
+                            </div>
+                        </div>
+                        <div class="bg-gray-50 dark:bg-gray-700/30 rounded-xl p-3">
+                            <p id="md-list-t2-title" class="text-[10px] font-bold text-gray-400 uppercase mb-2 border-b border-gray-200 dark:border-gray-600 pb-1 truncate">Team B</p>
+                            <div id="md-list-t2" class="space-y-2">
+                                <p class="text-xs text-gray-400 italic">Loading...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+    
+                <div id="md-layout-race" class="hidden">
+                    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                        <table class="w-full text-sm text-left">
+                            <thead class="text-xs text-gray-500 uppercase bg-gray-50 dark:bg-gray-700 font-bold">
+                                <tr>
+                                    <th class="px-4 py-3">Rank</th>
+                                    <th class="px-4 py-3">Participant</th>
+                                    <th id="md-race-metric-header" class="px-4 py-3 text-right">Time/Dist</th>
+                                </tr>
+                            </thead>
+                            <tbody id="md-race-tbody" class="divide-y divide-gray-100 dark:divide-gray-700">
+                                </tbody>
+                        </table>
+                    </div>
+                </div>
+    
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-confirm" class="fixed inset-0 z-[70] bg-black/60 hidden flex items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-white dark:bg-gray-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl animate-scale-in">
+            <h3 id="confirm-title" class="text-lg font-bold mb-2 dark:text-white">Confirm Action</h3>
+            <p id="confirm-msg" class="text-sm text-gray-500 dark:text-gray-400 mb-6 font-medium">Are you sure you want to proceed?</p>
+            
+            <div class="flex gap-3">
+                <button id="btn-confirm-cancel" class="flex-1 py-3 bg-gray-100 dark:bg-gray-700 font-bold rounded-xl text-gray-600 dark:text-gray-300 hover:bg-gray-200 transition-colors">Cancel</button>
+                <button id="btn-confirm-yes" class="flex-1 py-3 bg-brand-primary text-white font-bold rounded-xl shadow-lg active:scale-95 transition-transform">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast-container" class="fixed bottom-20 left-1/2 transform -translate-x-1/2 z-[70] transition-all duration-300 translate-y-20 opacity-0 w-max max-w-[90%] pointer-events-none">
+        <div class="bg-gray-900 dark:bg-white text-white dark:text-black px-6 py-3 rounded-full shadow-2xl font-bold text-sm flex items-center gap-3">
+            <span id="toast-icon"></span>
+            <span id="toast-msg"></span>
+        </div>
+    </div>
+
+    <script src="student.js"></script>
+    <script>lucide.createIcons();</script>
+</body>
+</html>
