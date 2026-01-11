@@ -1,7 +1,7 @@
 // --- CONFIGURATION ---
 const supabaseClient = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
 let currentUser = null;
-let myRegistrations = []; // Stores Sport IDs the user has registered for
+let myRegistrations = []; // Array of Sport IDs the user has registered for
 let selectedSportForReg = null;
 let currentScheduleView = 'upcoming'; // 'upcoming' or 'results'
 let allSportsList = []; // Cache for search
@@ -10,7 +10,7 @@ let allSportsList = []; // Cache for search
 const DEFAULT_TEAM_SIZE = 5;
 const DEFAULT_AVATAR = "https://t4.ftcdn.net/jpg/05/89/93/27/360_F_589932782_vQAEAZhHnq1QCGu5ikwrYaQD0Mmurm0N.jpg";
 
-// Sports that have specific "Match Details" views
+// --- LISTS FOR VIEW LOGIC ---
 const TEAM_SPORTS_WITH_VIEW = [
     'Box cricket', 'Volleyball', 'Basketball', 'Football', 
     'Rugby', 'Kho-kho', 'Tug of war', 'Kabbaddi'
@@ -26,22 +26,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     initTheme();
     await checkAuth();
     
-    // Setup UI Interactions
     setupTabSystem();
     setupConfirmModal(); 
     
-    // Default Tab
+    // Default Load
     window.switchTab('home');
 });
 
-// --- 1. THEME LOGIC ---
+// --- 1. THEME LOGIC (STRICT LIGHT MODE) ---
 function initTheme() {
     const savedTheme = localStorage.getItem('urja-theme');
-    if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+    
+    // Only enable dark mode if explicitly saved as 'dark'.
+    // Otherwise, force 'light' mode regardless of system settings.
+    if (savedTheme === 'dark') {
         document.documentElement.classList.add('dark');
         updateThemeIcon(true);
     } else {
         document.documentElement.classList.remove('dark');
+        localStorage.setItem('urja-theme', 'light'); // Ensure preference is saved as light
         updateThemeIcon(false);
     }
 }
@@ -72,7 +75,7 @@ async function checkAuth() {
         return;
     }
     
-    // Fetch Full Profile
+    // Fetch Profile
     const { data: profile, error } = await supabaseClient
         .from('users')
         .select('*')
@@ -80,8 +83,6 @@ async function checkAuth() {
         .single();
 
     if (error || !profile) {
-        // Force logout if profile is missing
-        await supabaseClient.auth.signOut();
         window.location.href = 'login.html';
         return;
     }
@@ -89,7 +90,7 @@ async function checkAuth() {
     currentUser = profile;
     updateProfileUI();
     await fetchMyRegistrations();
-    loadUserStats(); // Load stats for Home Screen
+    loadUserStats();
 }
 
 function updateProfileUI() {
@@ -108,7 +109,6 @@ function updateProfileUI() {
     if(nameEl) nameEl.innerText = `${currentUser.first_name} ${currentUser.last_name}`;
     if(detailsEl) detailsEl.innerText = `${currentUser.class_name || 'N/A'} • ${currentUser.student_id || 'N/A'}`;
     
-    // Mobile Number Warning
     if(!currentUser.mobile) {
         showToast("⚠️ Add Mobile Number in Profile Settings", "error");
     }
@@ -122,9 +122,7 @@ async function fetchMyRegistrations() {
 }
 
 async function loadUserStats() {
-    // Basic stats calculation (Mock logic for now, or fetch from real tables)
-    // Real implementation would count rows in 'registrations' where status='Won'
-    
+    // Basic stats calculation
     const { count: matches } = await supabaseClient
         .from('registrations')
         .select('id', { count: 'exact', head: true })
@@ -137,16 +135,19 @@ async function loadUserStats() {
         .eq('user_id', currentUser.id)
         .eq('player_status', 'Won');
 
-    document.getElementById('stat-matches-played').innerText = matches || 0;
-    document.getElementById('stat-wins').innerText = wins || 0;
+    const matchesEl = document.getElementById('stat-matches-played');
+    const winsEl = document.getElementById('stat-wins');
+    
+    if(matchesEl) matchesEl.innerText = matches || 0;
+    if(winsEl) winsEl.innerText = wins || 0;
 }
 
 window.logout = async function() {
     await supabaseClient.auth.signOut();
-    window.location.href = 'index.html'; // Go back to Landing Page
+    window.location.href = 'login.html';
 }
 
-// --- 3. NAVIGATION ---
+// --- 3. NAVIGATION & TABS ---
 function setupTabSystem() {
     window.switchTab = function(tabId) {
         // Hide all views
@@ -156,9 +157,8 @@ function setupTabSystem() {
         const targetView = document.getElementById('view-' + tabId);
         if(targetView) {
             targetView.classList.remove('hidden');
-            // Re-trigger animation
             targetView.classList.remove('animate-fade-in');
-            void targetView.offsetWidth; 
+            void targetView.offsetWidth; // Trigger reflow
             targetView.classList.add('animate-fade-in');
         }
         
@@ -247,11 +247,9 @@ async function loadSchedule() {
     container.innerHTML = filteredMatches.map(m => {
         const isLive = m.is_live === true || m.status === 'Live';
         const sportName = m.sports.name;
-        
-        // --- VIEWABLE CHECK ---
         const isViewable = TEAM_SPORTS_WITH_VIEW.includes(sportName) || RACE_SPORTS_WITH_VIEW.includes(sportName);
 
-        // --- TIME FORMATTING ---
+        // Date Parsing
         const dateObj = new Date(m.start_time);
         const timeStr = dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
         const dateStr = dateObj.toLocaleDateString([], {month: 'short', day: 'numeric'});
@@ -269,18 +267,18 @@ async function loadSchedule() {
         >
             <div class="flex justify-between items-start mb-6">
                 ${badgeHtml}
-                <span class="text-xs text-gray-500 dark:text-gray-400 font-medium">${m.location || 'Main Ground'}</span>
+                <span class="text-xs text-gray-500 dark:text-gray-400 font-medium">${m.location || 'TBA'}</span>
             </div>
             <div class="flex items-center justify-between w-full mb-6">
                 <div class="flex-1 text-center">
-                    <h4 class="font-black text-lg text-gray-800 dark:text-white leading-tight break-words">${m.participant1_name || 'TBA'}</h4>
+                    <h4 class="font-black text-lg text-gray-800 dark:text-white leading-tight break-words">${m.team1_name || 'TBA'}</h4>
                 </div>
                 <div class="shrink-0 flex flex-col items-center px-2">
                     <span class="text-[10px] font-bold text-gray-300 mb-1">VS</span>
                     <span class="bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 text-[10px] font-bold px-4 py-1 rounded-full uppercase truncate max-w-[100px]">${sportName}</span>
                 </div>
                 <div class="flex-1 text-center">
-                    <h4 class="font-black text-lg text-gray-800 dark:text-white leading-tight break-words">${m.participant2_name || 'TBA'}</h4>
+                    <h4 class="font-black text-lg text-gray-800 dark:text-white leading-tight break-words">${m.team2_name || 'TBA'}</h4>
                 </div>
             </div>
             <div class="border-t border-gray-100 dark:border-gray-700 pt-3 flex justify-between items-center">
@@ -314,18 +312,16 @@ window.openMatchDetails = async function(matchId) {
     if (isTeamSport) {
         document.getElementById('md-layout-team').classList.remove('hidden');
         
-        document.getElementById('md-t1-name').innerText = match.participant1_name;
-        document.getElementById('md-t2-name').innerText = match.participant2_name;
+        document.getElementById('md-t1-name').innerText = match.team1_name;
+        document.getElementById('md-t2-name').innerText = match.team2_name;
         document.getElementById('md-t1-score').innerText = match.score1 || '0';
         document.getElementById('md-t2-score').innerText = match.score2 || '0';
         
-        document.getElementById('md-list-t1-title').innerText = match.participant1_name;
-        document.getElementById('md-list-t2-title').innerText = match.participant2_name;
+        document.getElementById('md-list-t1-title').innerText = match.team1_name;
+        document.getElementById('md-list-t2-title').innerText = match.team2_name;
 
-        // Try to fetch squads if names correspond to Team IDs or Names
-        // This is complex if names are just text. Assuming team names match DB.
-        loadSquadList(match.participant1_name, match.sport_id, 'md-list-t1');
-        loadSquadList(match.participant2_name, match.sport_id, 'md-list-t2');
+        loadSquadList(match.team1_name, match.sport_id, 'md-list-t1');
+        loadSquadList(match.team2_name, match.sport_id, 'md-list-t2');
 
     } else if (isRaceSport) {
         document.getElementById('md-layout-race').classList.remove('hidden');
@@ -336,8 +332,12 @@ window.openMatchDetails = async function(matchId) {
         const tbody = document.getElementById('md-race-tbody');
         tbody.innerHTML = '';
         
-        let results = match.race_details || [];
-        
+        // Parse JSON results
+        let results = [];
+        try {
+            results = match.race_details ? (typeof match.race_details === 'string' ? JSON.parse(match.race_details) : match.race_details) : [];
+        } catch(e) { console.error("JSON Error", e); }
+
         if (!results || results.length === 0) {
             tbody.innerHTML = '<tr><td colspan="3" class="px-4 py-8 text-center text-gray-400 italic">No results data available yet.</td></tr>';
         } else {
@@ -368,6 +368,7 @@ async function loadSquadList(teamName, sportId, containerId) {
     const container = document.getElementById(containerId);
     container.innerHTML = '<p class="text-xs text-gray-400 italic">Loading...</p>';
 
+    // Find team ID by name & sport
     const { data: teamData } = await supabaseClient
         .from('teams')
         .select('id')
@@ -376,7 +377,7 @@ async function loadSquadList(teamName, sportId, containerId) {
         .single();
 
     if (!teamData) {
-        container.innerHTML = '<p class="text-xs text-gray-400 italic">Squad details unavailable.</p>';
+        container.innerHTML = '<p class="text-xs text-gray-400 italic">Squad unavailable.</p>';
         return;
     }
 
@@ -387,7 +388,7 @@ async function loadSquadList(teamName, sportId, containerId) {
         .eq('status', 'Accepted'); 
 
     if (!members || members.length === 0) {
-        container.innerHTML = '<p class="text-xs text-gray-400 italic">No members found.</p>';
+        container.innerHTML = '<p class="text-xs text-gray-400 italic">No members.</p>';
         return;
     }
 
@@ -458,7 +459,7 @@ window.loadTeamMarketplace = async function() {
          return;
     }
 
-    // Filter by Gender (Teams are usually single gender)
+    // Filter by Gender
     const validTeams = teams.filter(t => t.captain?.gender === currentUser.gender);
 
     if(!validTeams.length) {
@@ -579,6 +580,7 @@ window.loadTeamLocker = async function() {
 window.openManageTeamModal = async function(teamId, teamName, isLocked) {
     document.getElementById('manage-team-title').innerText = "Manage: " + teamName;
     
+    // 1. Pending Requests
     const { data: pending } = await supabaseClient.from('team_members').select('id, users(first_name, last_name)').eq('team_id', teamId).eq('status', 'Pending');
     const reqList = document.getElementById('manage-requests-list');
     reqList.innerHTML = (!pending || pending.length === 0) ? '<p class="text-xs text-gray-400 italic">No pending requests.</p>' : pending.map(p => `
@@ -590,6 +592,7 @@ window.openManageTeamModal = async function(teamId, teamName, isLocked) {
             </div>
         </div>`).join('');
 
+    // 2. Current Members
     const { data: members } = await supabaseClient.from('team_members').select('id, user_id, users(first_name, last_name)').eq('team_id', teamId).eq('status', 'Accepted');
     const memList = document.getElementById('manage-members-list');
     memList.innerHTML = members.map(m => `
@@ -600,7 +603,7 @@ window.openManageTeamModal = async function(teamId, teamName, isLocked) {
             ${m.user_id !== currentUser.id && !isLocked ? `<button onclick="window.removeMember('${m.id}', '${teamId}')" class="text-red-500"><i data-lucide="trash" class="w-3 h-3"></i></button>` : ''}
         </div>`).join('');
 
-    // Dynamic Lock Button
+    // 3. Dynamic Lock Button
     const oldLock = document.getElementById('btn-lock-dynamic');
     if(oldLock) oldLock.remove();
 
@@ -884,7 +887,7 @@ function showConfirmDialog(title, msg, onConfirm) {
     document.getElementById('modal-confirm').classList.remove('hidden');
 }
 
-// --- REGISTRATION MODAL LOGIC ---
+// --- REGISTRATION MODAL ---
 window.openRegistrationModal = async function(id) {
     const { data: sport } = await supabaseClient.from('sports').select('*').eq('id', id).single();
     selectedSportForReg = sport;
@@ -937,7 +940,6 @@ window.confirmRegistration = async function() {
         btn.disabled = false;
         btn.innerText = originalText;
 
-        // Force UI Update
         renderSportsList(allSportsList);
     }
 }
