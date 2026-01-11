@@ -32,16 +32,19 @@ body {
     padding-bottom: env(safe-area-inset-bottom, 20px);
 }
 
-/* --- INPUTS (CRITICAL FIX FOR VISIBILITY) --- */
+/* --- FORMS & INPUTS (CRITICAL FIXES) --- */
+
+/* We remove specific color definitions here so Tailwind classes 
+   (text-gray-900, dark:text-white) in the HTML take priority.
+*/
 .input-field {
     width: 100%;
-    /* Allow Tailwind classes to handle colors (bg-gray-50, etc) */
-    /* but ensure font size and padding are consistent */
     font-size: 0.875rem; 
     line-height: 1.25rem;
 }
 
-/* Autofill Fix for Dark/Light Mode */
+/* Input Autofill Fix - LIGHT MODE */
+/* Forces white background and dark text when browser fills the password */
 input:-webkit-autofill,
 input:-webkit-autofill:hover, 
 input:-webkit-autofill:focus, 
@@ -49,18 +52,22 @@ input:-webkit-autofill:active {
     -webkit-box-shadow: 0 0 0 30px #f9fafb inset !important;
     -webkit-text-fill-color: #1f2937 !important;
     border-radius: 0.75rem;
+    transition: background-color 5000s ease-in-out 0s;
 }
 
+/* Input Autofill Fix - DARK MODE */
+/* Forces dark background and white text when browser fills the password */
 .dark input:-webkit-autofill,
 .dark input:-webkit-autofill:hover, 
 .dark input:-webkit-autofill:focus, 
 .dark input:-webkit-autofill:active {
     -webkit-box-shadow: 0 0 0 30px #111827 inset !important;
-    -webkit-text-fill-color: white !important;
+    -webkit-text-fill-color: #ffffff !important;
     border-radius: 0.75rem;
+    transition: background-color 5000s ease-in-out 0s;
 }
 
-/* Custom Radio */
+/* Custom Checkbox/Radio */
 .custom-radio:checked {
     background-color: #6366f1;
     border-color: #6366f1;
@@ -72,21 +79,30 @@ input:-webkit-autofill:active {
     from { transform: translateY(100%); opacity: 0.5; }
     to { transform: translateY(0); opacity: 1; }
 }
-.animate-slide-up { animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
+.animate-slide-up {
+    animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
 
 @keyframes fadeIn {
     from { opacity: 0; }
     to { opacity: 1; }
 }
-.animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+
+.animate-fade-in {
+    animation: fadeIn 0.3s ease-out forwards;
+}
 
 @keyframes scaleIn {
     from { transform: scale(0.9); opacity: 0; }
     to { transform: scale(1); opacity: 1; }
 }
-.animate-scale-in { animation: scaleIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
 
-/* --- SPINNER --- */
+.animate-scale-in {
+    animation: scaleIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* --- LOADING SPINNER --- */
 .spinner {
     width: 24px;
     height: 24px;
@@ -95,34 +111,76 @@ input:-webkit-autofill:active {
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
 }
+
 @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
 }
 
-/* --- NAV & BUTTONS --- */
+/* --- NAVIGATION STYLES --- */
 .nav-item {
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
 }
-.nav-item.active { color: #6366f1; }
+
+.nav-item.active {
+    color: #6366f1;
+}
+
 .nav-item.active i {
     transform: translateY(-2px);
     filter: drop-shadow(0 4px 6px rgba(99, 102, 241, 0.3));
 }
 
-button {
-    user-select: none;
-    -webkit-user-select: none;
-}
-
-/* Glass Effect */
+/* --- CARD & GLASSMORPHISM --- */
 .glass-card {
     background: rgba(255, 255, 255, 0.7);
     backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.2);
 }
+
 .dark .glass-card {
     background: rgba(31, 41, 55, 0.7);
     border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* --- MATCH CARD BUTTONS --- */
+.btn-view-details {
+    position: relative;
+    overflow: hidden;
+}
+
+.btn-view-details::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    transition: width 0.3s ease-out, height 0.3s ease-out;
+}
+
+.btn-view-details:active::after {
+    width: 200%;
+    height: 200%;
+}
+
+/* --- MISC --- */
+.shimmer {
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
+button {
+    user-select: none;
+    -webkit-user-select: none;
 }
