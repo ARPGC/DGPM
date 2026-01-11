@@ -29,8 +29,12 @@
         }
     </script>
     <link rel="stylesheet" href="style.css">
+    <style>
+        /* Specific Fix for Select Options in Dark Mode */
+        .dark option { background-color: #1f2937; color: white; }
+    </style>
 </head>
-<body class="bg-gray-100 dark:bg-dark-bg text-gray-900 dark:text-white antialiased selection:bg-brand-primary selection:text-white min-h-screen flex items-center justify-center p-4 bg-[url('https://images.unsplash.com/photo-1517649763962-0c623066013b?w=1600&q=80')] bg-cover bg-center">
+<body class="bg-gray-100 dark:bg-dark-bg text-gray-900 dark:text-white antialiased min-h-screen flex items-center justify-center p-4 bg-[url('https://images.unsplash.com/photo-1517649763962-0c623066013b?w=1600&q=80')] bg-cover bg-center">
 
     <div class="absolute inset-0 bg-black/60 backdrop-blur-sm z-0"></div>
 
@@ -94,19 +98,19 @@
                 <div class="grid grid-cols-2 gap-3">
                     <select id="reg-class" required class="input-field w-full p-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white outline-none focus:border-brand-primary transition-all cursor-pointer">
                         <option value="" disabled selected>Select Class</option>
-                        <option value="FY" class="text-black">FY</option>
-                        <option value="SY" class="text-black">SY</option>
-                        <option value="TY" class="text-black">TY</option>
+                        <option value="FY">FY</option>
+                        <option value="SY">SY</option>
+                        <option value="TY">TY</option>
                     </select>
                     <select id="reg-gender" required class="input-field w-full p-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white outline-none focus:border-brand-primary transition-all cursor-pointer">
                         <option value="" disabled selected>Gender</option>
-                        <option value="Male" class="text-black">Male</option>
-                        <option value="Female" class="text-black">Female</option>
-                        <option value="Other" class="text-black">Other</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Other">Other</option>
                     </select>
                 </div>
 
-                <input type="tel" id="reg-mobile" placeholder="Mobile Number (10 digits)" required class="input-field w-full p-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white outline-none focus:border-brand-primary transition-all" pattern="[0-9]{10}">
+                <input type="tel" id="reg-mobile" placeholder="Mobile Number (10 digits)" required class="input-field w-full p-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white outline-none focus:border-brand-primary transition-all" pattern="[0-9]{10}" title="Please enter a valid 10-digit mobile number">
 
                 <input type="email" id="reg-email" placeholder="Email Address" required class="input-field w-full p-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white outline-none focus:border-brand-primary transition-all">
                 
