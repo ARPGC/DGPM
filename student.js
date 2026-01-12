@@ -253,7 +253,7 @@ async function loadSchedule() {
     container.className = 'space-y-4 pb-24'; 
 
     container.innerHTML = filteredMatches.map(m => {
-        const isLive = m.is_live === true; // Check DB Flag specifically
+        const isLive = m.is_live === true; 
         const isPerf = m.sports.is_performance;
         
         const dateObj = new Date(m.start_time);
@@ -352,19 +352,19 @@ window.openMatchDetails = async function(matchId) {
         } else {
             // --- STRICT SORTING: Low to High (Rank 1 top) ---
             results.sort((a, b) => {
-                // 1. If both have ranks, sort by rank
+                // 1. If ranks exist, sort by rank (Completed Event)
                 if (a.rank && b.rank) return a.rank - b.rank;
                 
-                // 2. If no rank, sort by result value (Ascending)
-                // Handle empty strings as infinity (bottom)
-                const valA = a.result ? parseFloat(a.result) : 999999;
-                const valB = b.result ? parseFloat(b.result) : 999999;
+                // 2. If no rank (Live Event), sort by raw value (Ascending)
+                // Treat empty/null as infinity so they go to the bottom
+                const valA = (a.result && !isNaN(parseFloat(a.result))) ? parseFloat(a.result) : 999999;
+                const valB = (b.result && !isNaN(parseFloat(b.result))) ? parseFloat(b.result) : 999999;
                 
                 return valA - valB;
             });
 
             tbody.innerHTML = results.map((r, index) => {
-                let rankDisplay = r.rank || (index + 1); // Show order if no official rank
+                let rankDisplay = r.rank || (index + 1);
                 let rankIcon = rankDisplay;
                 
                 if(rankDisplay === 1) rankIcon = '🥇';
@@ -419,7 +419,7 @@ async function loadSquadList(teamId, containerId) {
     `).join('');
 }
 
-// --- 7. TEAMS MODULE (FULL TEAM LOGIC) ---
+// --- 7. TEAMS MODULE (STRICT FULL TEAM CHECK) ---
 window.toggleTeamView = function(view) {
     document.getElementById('team-marketplace').classList.add('hidden');
     document.getElementById('team-locker').classList.add('hidden');
@@ -483,14 +483,14 @@ window.loadTeamMarketplace = async function() {
     const teamPromises = validTeams.map(async (t) => {
         const { count } = await supabaseClient.from('team_members').select('*', { count: 'exact', head: true }).eq('team_id', t.id).eq('status', 'Accepted');
         const max = t.sports.team_size || DEFAULT_TEAM_SIZE;
-        const seatsLeft = Math.max(0, max - (count || 0)); // Ensure non-negative
+        const seatsLeft = Math.max(0, max - (count || 0)); // Prevent negatives
         return { ...t, seatsLeft };
     });
 
     const teamsWithCounts = await Promise.all(teamPromises);
 
     container.innerHTML = teamsWithCounts.map(t => {
-        // --- STRICT TEAM FULL LOGIC ---
+        // --- CHECK IF FULL ---
         const isFull = t.seatsLeft <= 0;
         const btnText = isFull ? "Team Full" : "View Squad & Join";
         const btnClass = isFull 
@@ -520,6 +520,7 @@ window.loadTeamMarketplace = async function() {
 }
 
 window.viewSquadAndJoin = async function(teamId, sportName, seatsLeft) {
+    // --- PREVENT OVERCROWDING ---
     if(seatsLeft <= 0) return showToast("❌ This team is full!", "error");
 
     const sportId = await getSportIdByName(sportName);
