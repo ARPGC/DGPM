@@ -105,7 +105,7 @@ async function loadSportsList() {
         if (isStarted) {
              actionBtn = `<span class="text-xs font-bold text-green-600 bg-green-50 px-3 py-1 rounded-lg border border-green-100 flex items-center gap-1 w-max ml-auto"><i data-lucide="activity" class="w-3 h-3"></i> Event Active</span>`;
         } else {
-             // CRITICAL FIX: Added s.type parameter here
+             // Pass sport type explicitly
              actionBtn = `
                 <button onclick="window.handleScheduleClick('${s.id}', '${s.name}', ${s.is_performance}, '${s.type}')" class="px-4 py-1.5 bg-black text-white rounded-lg text-xs font-bold hover:bg-gray-800 shadow-sm transition-transform active:scale-95 ml-auto block">
                     ${s.is_performance ? 'Start Event' : 'Schedule Round'}
@@ -171,7 +171,6 @@ window.toggleSportStatus = async function(id, currentStatus) {
 
 // --- 5. SCHEDULING ENGINE ---
 
-// CRITICAL FIX: Ensure arguments match the call from loadSportsList
 window.handleScheduleClick = async function(sportId, sportName, isPerformance, sportType) {
     if (isPerformance) {
         if (confirm(`Start ${sportName}? This will initiate the event for volunteers.`)) {
@@ -182,6 +181,7 @@ window.handleScheduleClick = async function(sportId, sportName, isPerformance, s
     }
 }
 
+// A. PERFORMANCE EVENTS
 async function initPerformanceEvent(sportId, sportName) {
     const { data: existing } = await supabaseClient.from('matches').select('id').eq('sport_id', sportId).neq('status', 'Completed');
     if (existing.length > 0) return showToast("Event is already active!", "info");
@@ -216,9 +216,11 @@ async function initPerformanceEvent(sportId, sportName) {
     }
 }
 
+// FIX: Force update status using RPC to solve "Live" bug
 window.endPerformanceEvent = async function(matchId) {
     if (!confirm("Are you sure? This will Calculate Winners and END the event.")) return;
 
+    // 1. Fetch current results
     const { data: match } = await supabaseClient.from('matches').select('performance_data, sports(unit)').eq('id', matchId).single();
     let arr = match.performance_data;
     const unit = match.sports.unit;
@@ -242,18 +244,24 @@ window.endPerformanceEvent = async function(matchId) {
     });
 
     const finalData = [...validEntries, ...arr.filter(p => !p.result || p.result.trim() === '')];
+    const winnerText = `Gold: ${winners.gold || '-'}`;
 
-    const { error } = await supabaseClient.from('matches').update({ 
+    // 2. Update Performance Data first (standard update)
+    await supabaseClient.from('matches').update({ 
         performance_data: finalData,
-        status: 'Completed',
-        winner_text: `Gold: ${winners.gold || '-'}`,
-        winners_data: winners,
-        is_live: false 
+        winners_data: winners
     }).eq('id', matchId);
 
-    if(error) showToast("Error: " + error.message, "error");
+    // 3. Force Status Close via RPC (Fixes the bug)
+    const { error } = await supabaseClient.rpc('force_end_match', { 
+        match_id_input: matchId, 
+        winner_id_input: null, 
+        winner_text_input: winnerText 
+    });
+
+    if(error) showToast("Error ending match: " + error.message, "error");
     else {
-        showToast("Event Ended Successfully!", "success");
+        showToast("Event Ended & Results Published!", "success");
         loadMatches(currentMatchViewFilter); 
         loadSportsList(); 
     }
@@ -275,53 +283,21 @@ async function initTournamentRound(sportId, sportName, sportType) {
     if (!matches || matches.length === 0) {
         // --- ROUND 1 START ---
         
-        // NEW FIX: If Individual Sport (Chess, Badminton), Auto-Create Teams for Registrants
+        // 1. INDIVIDUAL SPORT FIX (RPC Call)
         if (sportType === 'Individual') {
             showToast("Syncing individual players...", "info");
-            
-            // 1. Get Registrations
-            const { data: regs } = await supabaseClient.from('registrations')
-                .select('user_id, users(first_name, last_name)')
-                .eq('sport_id', sportId);
-            
-            // 2. Get Existing Teams to prevent duplicates
-            const { data: existing } = await supabaseClient.from('teams').select('captain_id').eq('sport_id', sportId);
-            const existingCaptains = existing.map(t => t.captain_id);
-
-            // 3. Create Teams for Missing Players
-            const missing = regs.filter(r => !existingCaptains.includes(r.user_id));
-            
-            if (missing.length > 0) {
-                for (const m of missing) {
-                    const { data: newTeam } = await supabaseClient.from('teams')
-                        .insert({ 
-                            name: `${m.users.first_name} ${m.users.last_name}`, 
-                            sport_id: sportId, 
-                            captain_id: m.user_id, 
-                            status: 'Locked' 
-                        })
-                        .select()
-                        .single();
-                    
-                    // Add as Member (Critical for 'get_valid_teams' logic)
-                    await supabaseClient.from('team_members').insert({
-                        team_id: newTeam.id,
-                        user_id: m.user_id,
-                        status: 'Accepted'
-                    });
-                }
+            // Call the SQL function to create teams automatically
+            const { error: syncError } = await supabaseClient.rpc('prepare_individual_teams', { sport_id_input: sportId });
+            if (syncError) {
+                console.error(syncError);
+                return showToast("Error syncing players: " + syncError.message, "error");
             }
         }
 
-        // --- FETCH VALID TEAMS (FULL SQUADS ONLY) ---
+        // 2. FETCH VALID TEAMS (FULL SQUADS ONLY)
         const { data: validTeams, error } = await supabaseClient.rpc('get_valid_teams', { sport_id_input: sportId });
         
-        // Fallback if RPC fails or not exists (Standard Query)
-        if (error) { 
-            console.warn("RPC Failed, using standard query", error);
-            // Fallback logic could be added here if RPC isn't deployed yet
-        }
-
+        if (error) { console.error(error); return showToast("DB Error: " + error.message, "error"); }
         if (!validTeams || validTeams.length < 2) return showToast("Need at least 2 VALID TEAMS to start.", "error");
 
         candidates = validTeams.map(t => ({ id: t.team_id, name: t.team_name }));
@@ -348,7 +324,7 @@ async function initTournamentRound(sportId, sportName, sportType) {
         candidates = teamDetails;
     }
 
-    // 2. Generate Schedule
+    // Generate Schedule
     candidates.sort(() => Math.random() - 0.5); 
     tempSchedule = [];
 
