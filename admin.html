@@ -15,7 +15,7 @@
 
     <script>
         tailwind.config = {
-            darkMode: 'class', // Manual control only
+            darkMode: 'class', 
             theme: {
                 extend: {
                     fontFamily: { sans: ['Outfit', 'sans-serif'] },
@@ -43,13 +43,13 @@
                 <i data-lucide="trophy" class="w-5 h-5"></i> Manage Sports
             </button>
             <button onclick="switchView('users')" id="nav-users" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm">
-                <i data-lucide="users" class="w-5 h-5"></i> Students
+                <i data-lucide="users" class="w-5 h-5"></i> Users & Staff
             </button>
             <button onclick="switchView('teams')" id="nav-teams" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm">
-                <i data-lucide="shield" class="w-5 h-5"></i> Teams
+                <i data-lucide="shield" class="w-5 h-5"></i> Teams & Squads
             </button>
             <button onclick="switchView('matches')" id="nav-matches" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm">
-                <i data-lucide="calendar" class="w-5 h-5"></i> Schedule
+                <i data-lucide="calendar" class="w-5 h-5"></i> Events & Schedule
             </button>
         </nav>
 
@@ -62,7 +62,7 @@
 
     <div class="md:hidden fixed top-0 w-full h-16 bg-white border-b border-gray-200 z-30 flex items-center justify-between px-4">
         <h1 class="text-xl font-black italic tracking-tighter">URJA <span class="text-brand-primary">ADMIN</span></h1>
-        <button onclick="document.getElementById('mobile-menu').classList.toggle('hidden')" class="p-2 text-gray-500">
+        <button onclick="document.querySelector('aside').classList.toggle('hidden')" class="p-2 text-gray-500">
             <i data-lucide="menu" class="w-6 h-6"></i>
         </button>
     </div>
@@ -118,11 +118,11 @@
                         <div class="grid grid-cols-2 gap-4">
                             <button onclick="switchView('matches')" class="p-4 bg-gray-50 rounded-xl text-left hover:bg-brand-primary hover:text-white transition-all group">
                                 <i data-lucide="calendar-plus" class="w-6 h-6 text-gray-400 group-hover:text-white mb-2"></i>
-                                <span class="block font-bold text-sm">Schedule Matches</span>
+                                <span class="block font-bold text-sm">Start/End Events</span>
                             </button>
-                            <button onclick="window.openBroadcastModal()" class="p-4 bg-gray-50 rounded-xl text-left hover:bg-brand-secondary hover:text-white transition-all group">
-                                <i data-lucide="megaphone" class="w-6 h-6 text-gray-400 group-hover:text-white mb-2"></i>
-                                <span class="block font-bold text-sm">Send Announcement</span>
+                            <button onclick="switchView('users')" class="p-4 bg-gray-50 rounded-xl text-left hover:bg-brand-secondary hover:text-white transition-all group">
+                                <i data-lucide="user-plus" class="w-6 h-6 text-gray-400 group-hover:text-white mb-2"></i>
+                                <span class="block font-bold text-sm">Assign Volunteers</span>
                             </button>
                         </div>
                     </div>
@@ -164,6 +164,7 @@
                                 <th class="p-4 text-xs font-bold text-gray-400 uppercase bg-gray-50">Name</th>
                                 <th class="p-4 text-xs font-bold text-gray-400 uppercase bg-gray-50">Class</th>
                                 <th class="p-4 text-xs font-bold text-gray-400 uppercase bg-gray-50">Role</th>
+                                <th class="p-4 text-xs font-bold text-gray-400 uppercase bg-gray-50">Assigned Sport</th>
                                 <th class="p-4 text-xs font-bold text-gray-400 uppercase bg-gray-50 text-right">Actions</th>
                             </tr>
                         </thead>
@@ -174,7 +175,7 @@
 
             <div id="view-matches" class="view-section hidden animate-fade-in">
                 <div class="flex justify-between items-center mb-6">
-                    <h3 class="font-bold text-lg">Tournament Scheduler</h3>
+                    <h3 class="font-bold text-lg">Event Control Center</h3>
                     <div class="flex gap-2">
                         <button onclick="loadMatches('Scheduled')" class="px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-bold hover:bg-gray-50">Scheduled</button>
                         <button onclick="loadMatches('Live')" class="px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-bold hover:bg-gray-50">Live Now</button>
@@ -186,7 +187,11 @@
             </div>
 
             <div id="view-teams" class="view-section hidden animate-fade-in">
-                <div id="teams-grid" class="grid grid-cols-1 md:grid-cols-3 gap-4"></div>
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="font-bold text-lg">Teams & Squads</h3>
+                </div>
+                <div id="teams-grid" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                     </div>
             </div>
 
         </div>
