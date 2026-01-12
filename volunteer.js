@@ -189,7 +189,6 @@ function renderScoreboard(match) {
     `;
 
     // Add Walkover Button Logic
-    // We check if we need to insert a button, avoid duplicates
     let woBtn = document.getElementById('btn-walkover');
     if(!woBtn) {
         woBtn = document.createElement('button');
@@ -271,7 +270,7 @@ window.declareWalkover = async function(match) {
         winner_text: finalText,
         is_walkover: true,
         score1: 'W',
-        score2: 'L' // Simple visual indicator
+        score2: 'L'
     }).eq('id', currentMatchId);
 
     if(error) showToast("Error", "error");
