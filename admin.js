@@ -106,7 +106,7 @@ async function loadSportsList() {
              actionBtn = `<span class="text-xs font-bold text-green-600 bg-green-50 px-3 py-1 rounded-lg border border-green-100 flex items-center gap-1 w-max ml-auto"><i data-lucide="activity" class="w-3 h-3"></i> Event Active</span>`;
         } else {
              actionBtn = `
-                <button onclick="window.handleScheduleClick('${s.id}', '${s.name}', ${s.is_performance})" class="px-4 py-1.5 bg-black text-white rounded-lg text-xs font-bold hover:bg-gray-800 shadow-sm transition-transform active:scale-95 ml-auto block">
+                <button onclick="window.handleScheduleClick('${s.id}', '${s.name}', ${s.is_performance}, '${s.type}')" class="px-4 py-1.5 bg-black text-white rounded-lg text-xs font-bold hover:bg-gray-800 shadow-sm transition-transform active:scale-95 ml-auto block">
                     ${s.is_performance ? 'Start Event' : 'Schedule Round'}
                 </button>`;
         }
@@ -170,13 +170,13 @@ window.toggleSportStatus = async function(id, currentStatus) {
 
 // --- 5. SCHEDULING ENGINE ---
 
-window.handleScheduleClick = async function(sportId, sportName, isPerformance) {
+window.handleScheduleClick = async function(sportId, sportName, isPerformance, sportType) {
     if (isPerformance) {
         if (confirm(`Start ${sportName}? This will initiate the event for volunteers.`)) {
             await initPerformanceEvent(sportId, sportName);
         }
     } else {
-        await initTournamentRound(sportId, sportName);
+        await initTournamentRound(sportId, sportName, sportType);
     }
 }
 
@@ -224,7 +224,7 @@ window.endPerformanceEvent = async function(matchId) {
 
     let validEntries = arr.filter(p => p.result && p.result.trim() !== '');
     
-    // Sort Logic (Strict Low to High for Time, High to Low for Meters)
+    // Sort Logic
     const isDistance = unit === 'Meters' || unit === 'Points';
     validEntries.sort((a, b) => {
         const valA = parseFloat(a.result) || 0;
@@ -247,22 +247,21 @@ window.endPerformanceEvent = async function(matchId) {
         status: 'Completed',
         winner_text: `Gold: ${winners.gold || '-'}`,
         winners_data: winners,
-        is_live: false // CRITICAL: Forces removal of Live badge
+        is_live: false 
     }).eq('id', matchId);
 
     if(error) showToast("Error: " + error.message, "error");
     else {
         showToast("Event Ended Successfully!", "success");
-        loadMatches('Completed');
-        loadSportsList();
+        loadMatches(currentMatchViewFilter); 
+        loadSportsList(); 
     }
 }
 
-// B. STRICT TOURNAMENT ROUND LOGIC
-async function initTournamentRound(sportId, sportName) {
-    showToast("Analyzing Tournament Data...", "info");
+// B. STRICT TOURNAMENT LOGIC + INDIVIDUAL PLAYER FIX
+async function initTournamentRound(sportId, sportName, sportType) {
+    showToast("Analyzing Bracket...", "info");
 
-    // 1. Determine Round Number
     const { data: matches } = await supabaseClient.from('matches')
         .select('round_number, status')
         .eq('sport_id', sportId)
@@ -273,12 +272,51 @@ async function initTournamentRound(sportId, sportName) {
     let candidates = [];
 
     if (!matches || matches.length === 0) {
-        // --- ROUND 1: STRICT FULL SQUADS ONLY ---
-        // Uses RPC function to filter teams that meet the exact size requirement
+        // --- ROUND 1 START ---
+        
+        // NEW FIX: If Individual Sport (Chess, Badminton), Auto-Create Teams for Registrants
+        if (sportType === 'Individual') {
+            showToast("Syncing individual players...", "info");
+            
+            // 1. Get Registrations
+            const { data: regs } = await supabaseClient.from('registrations')
+                .select('user_id, users(first_name, last_name)')
+                .eq('sport_id', sportId);
+            
+            // 2. Get Existing Teams to prevent duplicates
+            const { data: existing } = await supabaseClient.from('teams').select('captain_id').eq('sport_id', sportId);
+            const existingCaptains = existing.map(t => t.captain_id);
+
+            // 3. Create Teams for Missing Players
+            const missing = regs.filter(r => !existingCaptains.includes(r.user_id));
+            
+            if (missing.length > 0) {
+                for (const m of missing) {
+                    const { data: newTeam } = await supabaseClient.from('teams')
+                        .insert({ 
+                            name: `${m.users.first_name} ${m.users.last_name}`, 
+                            sport_id: sportId, 
+                            captain_id: m.user_id, 
+                            status: 'Locked' 
+                        })
+                        .select()
+                        .single();
+                    
+                    // Add as Member (Critical for 'get_valid_teams' logic)
+                    await supabaseClient.from('team_members').insert({
+                        team_id: newTeam.id,
+                        user_id: m.user_id,
+                        status: 'Accepted'
+                    });
+                }
+            }
+        }
+
+        // --- FETCH VALID TEAMS (FULL SQUADS ONLY) ---
         const { data: validTeams, error } = await supabaseClient.rpc('get_valid_teams', { sport_id_input: sportId });
         
-        if (error) { console.error(error); return showToast("Database Error: " + error.message, "error"); }
-        if (!validTeams || validTeams.length < 2) return showToast("Need at least 2 TEAMS WITH FULL SQUADS to start.", "error");
+        if (error) { console.error(error); return showToast("DB Error: " + error.message, "error"); }
+        if (!validTeams || validTeams.length < 2) return showToast("Need at least 2 VALID TEAMS to start.", "error");
 
         candidates = validTeams.map(t => ({ id: t.team_id, name: t.team_name }));
         
@@ -291,27 +329,23 @@ async function initTournamentRound(sportId, sportName) {
         if (matches[0].status !== 'Completed') return showToast("Current round matches are still active!", "error");
         
         round = matches[0].round_number + 1;
-        
-        // Fetch winners from previous round matches
         const { data: winners } = await supabaseClient.from('matches')
             .select('winner_id')
             .eq('sport_id', sportId)
             .eq('round_number', round - 1)
             .neq('winner_id', null);
 
-        if (!winners || winners.length < 2) return showToast("Tournament Completed or Insufficient Winners.", "success");
+        if (!winners || winners.length < 2) return showToast("Tournament Completed / Insufficient Winners.", "success");
 
-        // Fetch Names
         const winnerIds = winners.map(w => w.winner_id);
         const { data: teamDetails } = await supabaseClient.from('teams').select('id, name').in('id', winnerIds);
         candidates = teamDetails;
     }
 
     // 2. Generate Schedule
-    candidates.sort(() => Math.random() - 0.5); // Shuffle
+    candidates.sort(() => Math.random() - 0.5); 
     tempSchedule = [];
 
-    // Determine Match Type (Final, Semi, etc.) based on remaining teams
     let matchType = 'Regular';
     if (candidates.length === 2) matchType = 'Final';
     else if (candidates.length <= 4) matchType = 'Semi-Final';
@@ -328,7 +362,7 @@ async function initTournamentRound(sportId, sportName) {
                 type: matchType
             });
         } else {
-             // Handle Bye (Odd number) - Auto Advance next logic turn
+             // Bye logic
              tempSchedule.push({
                 t1: candidates[i],
                 t2: { id: null, name: "BYE (Auto-Advance)" },
@@ -380,12 +414,10 @@ async function confirmSchedule(sportId) {
     btn.innerText = "Publishing...";
     btn.disabled = true;
 
-    // Filter valid matches. If Bye, we might want to auto-handle, 
-    // but for now we create the match. Admin/Volunteer can "End" it immediately.
     const inserts = tempSchedule.map(m => ({
         sport_id: sportId,
         team1_id: m.t1.id,
-        team2_id: m.t2.id, // Null if Bye
+        team2_id: m.t2.id,
         team1_name: m.t1.name,
         team2_name: m.t2.name,
         start_time: new Date().toISOString().split('T')[0] + 'T' + m.time,
@@ -416,16 +448,11 @@ async function confirmSchedule(sportId) {
 window.loadMatches = async function(statusFilter = 'Scheduled') {
     currentMatchViewFilter = statusFilter;
     
-    // Toggle Active Tab Style
-    const buttons = document.querySelectorAll('#view-matches button');
-    buttons.forEach(btn => {
-        if(btn.innerText.includes(statusFilter)) {
-            btn.classList.remove('bg-white', 'border-gray-200');
-            btn.classList.add('bg-black', 'text-white', 'border-black');
-        } else {
-            btn.classList.add('bg-white', 'border-gray-200');
-            btn.classList.remove('bg-black', 'text-white', 'border-black');
-        }
+    // Update Button Styles
+    const btns = document.querySelectorAll('#view-matches button');
+    btns.forEach(b => {
+        if(b.innerText.includes(statusFilter)) b.classList.add('bg-gray-100');
+        else b.classList.remove('bg-gray-100');
     });
 
     const container = document.getElementById('matches-grid');
@@ -506,7 +533,7 @@ window.startMatch = async function(matchId) {
     loadSportsList();
 }
 
-// --- 7. TEAMS & 8. USERS (Standard Logic Preserved) ---
+// --- 7. TEAMS & 8. USERS (Same as before) ---
 
 async function loadTeamsList() {
     const grid = document.getElementById('teams-grid');
