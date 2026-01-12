@@ -3,6 +3,11 @@ const supabaseClient = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.s
 let currentUser = null;
 let currentMatchId = null;
 
+// --- GLOBAL VARS FOR SEARCH ---
+let currentRaceData = []; // Master list from DB
+let currentUnit = ''; 
+let currentMatchIdLocal = '';
+
 // --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', async () => {
     lucide.createIcons();
@@ -125,18 +130,46 @@ window.openMatchInterface = async function(matchId) {
     }
 }
 
-// --- 4. RACE / PERFORMANCE LOGIC (RESTRICTED) ---
-function renderRaceTable(match) {
-    const list = match.performance_data || []; 
-    const container = document.getElementById('race-rows-container');
-    const unit = match.sports.unit || 'Points';
+// --- 4. RACE / PERFORMANCE LOGIC (SEARCH & RESTRICTED) ---
 
-    if(list.length === 0) {
+function renderRaceTable(match) {
+    // Set Global State for Search/Update
+    currentRaceData = match.performance_data || []; 
+    currentUnit = match.sports.unit || 'Points';
+    currentMatchIdLocal = match.id;
+
+    // Reset Search Input
+    const searchInput = document.getElementById('race-search-input');
+    if(searchInput) searchInput.value = '';
+
+    // Render Full List initially
+    renderRaceRows(currentRaceData);
+
+    document.getElementById('modal-race-entry').classList.remove('hidden');
+}
+
+// Search Filter Logic
+window.filterRaceList = function(term) {
+    const lowerTerm = term.toLowerCase();
+    const filtered = currentRaceData.filter(p => p.name.toLowerCase().includes(lowerTerm));
+    renderRaceRows(filtered);
+}
+
+// DOM Rendering Logic
+function renderRaceRows(dataArray) {
+    const container = document.getElementById('race-rows-container');
+
+    if(dataArray.length === 0) {
         container.innerHTML = '<p class="text-center text-gray-400 py-10">No participants found.</p>';
     } else {
-        container.innerHTML = list.map((p, idx) => `
+        container.innerHTML = dataArray.map((p) => {
+            // CRITICAL: Find the *original* index in the Master Array (currentRaceData)
+            // This ensures we update the correct person even when the list is filtered.
+            const realIndex = currentRaceData.indexOf(p);
+
+            return `
             <div class="flex items-center gap-3 mb-2 p-3 bg-gray-50 rounded-xl border border-gray-100">
-                <span class="font-bold text-gray-400 w-6 text-center">${idx + 1}</span>
+                <span class="font-bold text-gray-400 w-6 text-center">${realIndex + 1}</span>
                 <div class="flex-1 min-w-0">
                     <p class="font-bold text-sm text-gray-800 truncate">${p.name}</p>
                     <p class="text-[10px] text-gray-400 uppercase">${p.id.split('-')[0] || 'ID'}</p>
@@ -145,39 +178,20 @@ function renderRaceTable(match) {
                     <input type="text" placeholder="0.00" 
                         class="w-24 p-2 bg-white border border-gray-200 rounded-lg text-right font-mono font-bold text-sm outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all"
                         value="${p.result || ''}" 
-                        onchange="updateRaceData('${match.id}', ${idx}, this.value)">
-                    <span class="absolute right-8 top-2.5 text-[10px] text-gray-400 font-bold pointer-events-none hidden">${unit}</span>
+                        onchange="updateRaceData('${currentMatchIdLocal}', ${realIndex}, this.value)">
+                    <span class="absolute right-8 top-2.5 text-[10px] text-gray-400 font-bold pointer-events-none hidden">${currentUnit}</span>
                 </div>
             </div>
-        `).join('');
+        `}).join('');
     }
-
-    // REMOVED: The "Finalize/End" button logic. 
-    // Volunteers can only input data. Admin ends the event.
-    const footer = document.querySelector('#modal-race-entry .border-t');
-    if(footer) {
-        footer.innerHTML = `
-            <p class="text-[10px] text-gray-400 text-center flex items-center justify-center gap-2">
-                <i data-lucide="info" class="w-3 h-3"></i> 
-                Data saves automatically. Admin will finalize results.
-            </p>
-        `;
-        lucide.createIcons();
-    }
-
-    document.getElementById('modal-race-entry').classList.remove('hidden');
 }
 
 async function updateRaceData(matchId, index, value) {
-    // 1. Fetch current array to ensure sync
-    const { data } = await supabaseClient.from('matches').select('performance_data').eq('id', matchId).single();
-    let dataArr = data.performance_data;
+    // 1. Update the local Master Array
+    currentRaceData[index].result = value;
     
-    // 2. Update specific index
-    dataArr[index].result = value;
-    
-    // 3. Auto-save back to DB
-    const { error } = await supabaseClient.from('matches').update({ performance_data: dataArr }).eq('id', matchId);
+    // 2. Auto-save entire array back to DB
+    const { error } = await supabaseClient.from('matches').update({ performance_data: currentRaceData }).eq('id', matchId);
     
     if(error) showToast("Save failed!", "error");
     else showToast("Saved", "success");
@@ -209,8 +223,6 @@ window.adjustScore = function(team, delta) {
 }
 
 window.updateMatchScore = async function(isFinal) {
-    // For now, retaining End Match for tournaments as discussed, 
-    // but strictly restricting performance games above.
     const s1 = document.getElementById('score-input-p1').value;
     const s2 = document.getElementById('score-input-p2').value;
     const winnerId = document.getElementById('winner-select').value;
