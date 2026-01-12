@@ -253,7 +253,7 @@ async function loadSchedule() {
     container.className = 'space-y-4 pb-24'; 
 
     container.innerHTML = filteredMatches.map(m => {
-        const isLive = m.status === 'Live';
+        const isLive = m.is_live === true; // Check DB Flag specifically
         const isPerf = m.sports.is_performance;
         
         const dateObj = new Date(m.start_time);
@@ -261,7 +261,7 @@ async function loadSchedule() {
         const dateStr = dateObj.toLocaleDateString([], {month: 'short', day: 'numeric'});
 
         let badgeHtml = isLive 
-            ? `<span class="bg-red-50 dark:bg-red-900/40 text-red-600 dark:text-red-400 text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider animate-pulse">LIVE NOW</span>`
+            ? `<span class="bg-red-50 dark:bg-red-900/40 text-red-600 dark:text-red-400 text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider animate-pulse flex items-center gap-1"><span class="w-1.5 h-1.5 bg-red-500 rounded-full"></span> LIVE</span>`
             : `<span class="bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider">${dateStr} • ${timeStr}</span>`;
 
         let footerText = '';
@@ -315,7 +315,7 @@ async function loadSchedule() {
     lucide.createIcons();
 }
 
-// --- 6. MATCH DETAILS MODAL (UPDATED SORTING) ---
+// --- 6. MATCH DETAILS MODAL (SORTING FIX) ---
 window.openMatchDetails = async function(matchId) {
     const { data: match } = await supabaseClient.from('matches').select('*, sports(name, is_performance, unit)').eq('id', matchId).single();
     if(!match) return;
@@ -350,26 +350,26 @@ window.openMatchDetails = async function(matchId) {
         if (!results || results.length === 0) {
             tbody.innerHTML = '<tr><td colspan="3" class="px-4 py-8 text-center text-gray-400 italic">No results available yet.</td></tr>';
         } else {
-            // --- UPDATED SORT: Strict Low to High on Result Value ---
+            // --- STRICT SORTING: Low to High (Rank 1 top) ---
             results.sort((a, b) => {
-                // If ranks exist (Completed event), sort by Rank
-                if (match.status === 'Completed' && a.rank && b.rank) return a.rank - b.rank;
+                // 1. If both have ranks, sort by rank
+                if (a.rank && b.rank) return a.rank - b.rank;
                 
-                // If Live/No Rank, sort by raw value (Low to High)
-                const valA = parseFloat(a.result) || 99999;
-                const valB = parseFloat(b.result) || 99999;
-                return valA - valB; 
+                // 2. If no rank, sort by result value (Ascending)
+                // Handle empty strings as infinity (bottom)
+                const valA = a.result ? parseFloat(a.result) : 999999;
+                const valB = b.result ? parseFloat(b.result) : 999999;
+                
+                return valA - valB;
             });
 
             tbody.innerHTML = results.map((r, index) => {
-                // Logic to show Rank if available, otherwise just order number
-                let displayRank = r.rank;
-                if(!displayRank) displayRank = index + 1; // Temporary visual rank for live view
+                let rankDisplay = r.rank || (index + 1); // Show order if no official rank
+                let rankIcon = rankDisplay;
                 
-                let rankIcon = displayRank;
-                if(displayRank === 1) rankIcon = '🥇';
-                if(displayRank === 2) rankIcon = '🥈';
-                if(displayRank === 3) rankIcon = '🥉';
+                if(rankDisplay === 1) rankIcon = '🥇';
+                else if(rankDisplay === 2) rankIcon = '🥈';
+                else if(rankDisplay === 3) rankIcon = '🥉';
 
                 return `
                 <tr class="bg-white dark:bg-gray-800 border-b dark:border-gray-700">
@@ -419,7 +419,7 @@ async function loadSquadList(teamId, containerId) {
     `).join('');
 }
 
-// --- 7. TEAMS MODULE (UPDATED: ENFORCE LIMIT) ---
+// --- 7. TEAMS MODULE (FULL TEAM LOGIC) ---
 window.toggleTeamView = function(view) {
     document.getElementById('team-marketplace').classList.add('hidden');
     document.getElementById('team-locker').classList.add('hidden');
@@ -483,21 +483,20 @@ window.loadTeamMarketplace = async function() {
     const teamPromises = validTeams.map(async (t) => {
         const { count } = await supabaseClient.from('team_members').select('*', { count: 'exact', head: true }).eq('team_id', t.id).eq('status', 'Accepted');
         const max = t.sports.team_size || DEFAULT_TEAM_SIZE;
-        const seatsLeft = max - (count || 0);
+        const seatsLeft = Math.max(0, max - (count || 0)); // Ensure non-negative
         return { ...t, seatsLeft };
     });
 
     const teamsWithCounts = await Promise.all(teamPromises);
 
     container.innerHTML = teamsWithCounts.map(t => {
-        // --- UPDATED LOGIC: Check for Full Team ---
+        // --- STRICT TEAM FULL LOGIC ---
         const isFull = t.seatsLeft <= 0;
         const btnText = isFull ? "Team Full" : "View Squad & Join";
         const btnClass = isFull 
             ? "w-full py-3 bg-gray-300 dark:bg-gray-700 text-gray-500 cursor-not-allowed text-xs font-bold rounded-xl"
             : "w-full py-3 bg-black dark:bg-white dark:text-black text-white text-xs font-bold rounded-xl shadow-lg active:scale-95 transition-transform hover:opacity-90";
         
-        // Prevent click if full
         const action = isFull ? "" : `window.viewSquadAndJoin('${t.id}', '${t.sports.name}', ${t.seatsLeft})`;
 
         return `
@@ -509,7 +508,7 @@ window.loadTeamMarketplace = async function() {
                     <p class="text-xs text-gray-400">Capt: ${t.captain.first_name}</p>
                 </div>
                 <div class="text-center">
-                    <span class="block text-xl font-black ${isFull ? 'text-gray-400' : 'text-brand-primary'}">${Math.max(0, t.seatsLeft)}</span>
+                    <span class="block text-xl font-black ${isFull ? 'text-gray-400' : 'text-brand-primary'}">${t.seatsLeft}</span>
                     <span class="text-[9px] text-gray-400 uppercase font-bold">Seats Left</span>
                 </div>
             </div>
@@ -520,9 +519,7 @@ window.loadTeamMarketplace = async function() {
     `}).join('');
 }
 
-// --- UPDATED: Pass seatsLeft to avoid race conditions/negative logic ---
 window.viewSquadAndJoin = async function(teamId, sportName, seatsLeft) {
-    // Safety check again
     if(seatsLeft <= 0) return showToast("❌ This team is full!", "error");
 
     const sportId = await getSportIdByName(sportName);
