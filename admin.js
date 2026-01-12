@@ -91,33 +91,65 @@ async function loadDashboardStats() {
     document.getElementById('dash-live-matches').innerText = matchCount || 0;
 }
 
-// --- 4. SPORTS MANAGEMENT ---
+// --- 4. SPORTS MANAGEMENT (SPLIT TABLES & BUTTON LOGIC) ---
 async function loadSportsList() {
-    const tbody = document.getElementById('sports-table-body');
-    tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-400">Loading...</td></tr>';
+    const tablePerf = document.getElementById('sports-table-performance');
+    const tableTourn = document.getElementById('sports-table-tournament');
+    
+    const loadingHtml = '<tr><td colspan="3" class="p-4 text-center text-gray-400">Loading...</td></tr>';
+    tablePerf.innerHTML = loadingHtml;
+    tableTourn.innerHTML = loadingHtml;
 
+    // 1. Fetch Sports
     const { data: sports } = await supabaseClient.from('sports').select('*').order('name');
+    
+    // 2. Fetch Active Matches (Status NOT Completed) to hide Start buttons
+    const { data: activeMatches } = await supabaseClient.from('matches').select('sport_id').neq('status', 'Completed');
+    const activeSportIds = activeMatches ? activeMatches.map(m => m.sport_id) : [];
 
     if(!sports || sports.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-400">No sports added.</td></tr>';
+        tablePerf.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-gray-400">No sports found.</td></tr>';
+        tableTourn.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-gray-400">No sports found.</td></tr>';
         return;
     }
 
-    tbody.innerHTML = sports.map(s => `
+    let perfHtml = '';
+    let tourHtml = '';
+
+    sports.forEach(s => {
+        const isStarted = activeSportIds.includes(s.id);
+        
+        // Button Logic: Hide if started, else show Start Button
+        let actionBtn = '';
+        if (isStarted) {
+             actionBtn = `<span class="text-xs font-bold text-green-500 bg-green-50 px-3 py-1 rounded-lg border border-green-100 flex items-center gap-1"><i data-lucide="activity" class="w-3 h-3"></i> Event Active</span>`;
+        } else {
+             actionBtn = `
+                <button onclick="window.handleScheduleClick('${s.id}', '${s.name}', ${s.is_performance})" class="px-3 py-1.5 bg-black text-white rounded-lg text-xs font-bold hover:bg-gray-800 mr-2 shadow-sm transition-transform active:scale-95">
+                    ${s.is_performance ? 'Start Event' : 'Schedule Round'}
+                </button>`;
+        }
+        
+        const closeBtn = `<button onclick="toggleSportStatus('${s.id}', '${s.status}')" class="text-xs font-bold underline text-gray-400 hover:text-gray-600 transition-colors">${s.status === 'Open' ? 'Close Reg' : 'Open Reg'}</button>`;
+
+        const rowHtml = `
         <tr class="border-b border-gray-50 hover:bg-gray-50 transition-colors">
             <td class="p-4 font-bold text-gray-800">${s.name}</td>
-            <td class="p-4"><span class="px-2 py-1 rounded text-xs font-bold ${s.type === 'Team' ? 'bg-indigo-50 text-indigo-600' : 'bg-pink-50 text-pink-600'}">${s.type}</span></td>
             <td class="p-4"><span class="px-2 py-1 rounded text-xs font-bold ${s.status === 'Open' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}">${s.status}</span></td>
-            <td class="p-4 text-right">
-                <button onclick="window.handleScheduleClick('${s.id}', '${s.name}', ${s.is_performance})" class="px-3 py-1 bg-black text-white rounded-lg text-xs font-bold hover:bg-gray-800 mr-2">
-                    ${s.is_performance ? 'Start Event' : 'Schedule Round'}
-                </button>
-                <button onclick="toggleSportStatus('${s.id}', '${s.status}')" class="text-xs font-bold underline text-gray-400 hover:text-gray-600">
-                    ${s.status === 'Open' ? 'Close' : 'Open'}
-                </button>
+            <td class="p-4 text-right flex items-center justify-end gap-3">
+                ${actionBtn}
+                ${closeBtn}
             </td>
-        </tr>
-    `).join('');
+        </tr>`;
+
+        if (s.is_performance) perfHtml += rowHtml;
+        else tourHtml += rowHtml;
+    });
+
+    tablePerf.innerHTML = perfHtml || '<tr><td colspan="3" class="p-4 text-center text-gray-400 italic">No performance events found.</td></tr>';
+    tableTourn.innerHTML = tourHtml || '<tr><td colspan="3" class="p-4 text-center text-gray-400 italic">No tournaments found.</td></tr>';
+    
+    lucide.createIcons();
 }
 
 window.openAddSportModal = () => document.getElementById('modal-add-sport').classList.remove('hidden');
@@ -200,7 +232,10 @@ async function initPerformanceEvent(sportId, sportName) {
     });
 
     if (error) showToast(error.message, "error");
-    else showToast(`${sportName} started! Volunteers can now enter data.`, "success");
+    else {
+        showToast(`${sportName} started!`, "success");
+        loadSportsList(); // Refresh to hide button
+    }
 }
 
 // B. End Performance Event (CALCULATE WINNERS)
@@ -235,9 +270,12 @@ window.endPerformanceEvent = async function(matchId) {
         if(i === 2) winners.bronze = p.name;
     });
 
+    // Merge sorted valid entries with empty ones
+    const finalData = [...validEntries, ...arr.filter(p => !p.result || p.result.trim() === '')];
+
     // Update DB
     const { error } = await supabaseClient.from('matches').update({ 
-        performance_data: arr, // Save sorted ranks
+        performance_data: finalData, // Save sorted ranks
         status: 'Completed',
         winner_text: `Gold: ${winners.gold || '-'}`,
         winners_data: winners, // Save explicit winners
@@ -248,6 +286,7 @@ window.endPerformanceEvent = async function(matchId) {
     else {
         showToast("Event Ended & Winners Declared!", "success");
         loadMatches('Completed');
+        loadSportsList(); // Refresh sports list to potentially show restart option (if needed, though logic hides active only)
     }
 }
 
@@ -354,6 +393,7 @@ async function confirmSchedule(sportId) {
         showToast("Schedule Published!", "success");
         closeModal('modal-schedule-preview');
         switchView('matches');
+        loadSportsList(); // Refresh button state
     }
 }
 
@@ -392,10 +432,10 @@ window.loadMatches = async function(statusFilter = 'Scheduled') {
 
             <div class="flex justify-between items-center border-t border-gray-50 pt-3 pl-3">
                 ${isPerf && m.status === 'Live' ? 
-                    `<button onclick="endPerformanceEvent('${m.id}')" class="w-full px-3 py-2 bg-red-500 text-white text-xs font-bold rounded-lg hover:bg-red-600 shadow-sm">Calculate Winners & End Event</button>`
+                    `<button onclick="endPerformanceEvent('${m.id}')" class="w-full px-3 py-2 bg-red-500 text-white text-xs font-bold rounded-lg hover:bg-red-600 shadow-sm transition-colors">Calculate Winners & End Event</button>`
                 : 
                     m.status === 'Scheduled' ? 
-                        `<button onclick="startMatch('${m.id}')" class="px-3 py-1.5 bg-green-500 text-white text-xs font-bold rounded-lg hover:bg-green-600 shadow-sm">Start Now</button>` 
+                        `<button onclick="startMatch('${m.id}')" class="px-3 py-1.5 bg-green-500 text-white text-xs font-bold rounded-lg hover:bg-green-600 shadow-sm transition-colors">Start Now</button>` 
                         : `<span class="text-xs font-bold text-gray-400">${m.winner_text || 'Completed'}</span>`
                 }
             </div>
@@ -411,7 +451,7 @@ window.startMatch = async function(matchId) {
     showToast("Match is now LIVE!", "success");
 }
 
-// --- 7. TEAMS MANAGEMENT (FIXED) ---
+// --- 7. TEAMS MANAGEMENT (View Squad) ---
 async function loadTeamsList() {
     const grid = document.getElementById('teams-grid');
     grid.innerHTML = '<p class="col-span-3 text-center text-gray-400 py-10">Loading teams...</p>';
@@ -453,7 +493,7 @@ window.viewTeamSquad = async function(teamId, teamName) {
             msg += `${i+1}. ${m.users.first_name} ${m.users.last_name} (${m.users.class_name})\n`;
         });
     }
-    alert(msg); // Using alert for simplicity, could be a modal
+    alert(msg);
 }
 
 // --- 8. USER MANAGEMENT & ASSIGNMENT ---
@@ -477,7 +517,7 @@ async function loadUsersList() {
         ).join('');
 
         return `
-        <tr class="border-b border-gray-50 hover:bg-gray-50">
+        <tr class="border-b border-gray-50 hover:bg-gray-50 transition-colors">
             <td class="p-4 font-bold text-gray-800 flex items-center gap-2">
                 <div class="w-8 h-8 rounded-full bg-gray-200 overflow-hidden"><img src="${u.avatar_url || 'https://via.placeholder.com/32'}" class="w-full h-full object-cover"></div>
                 ${u.first_name} ${u.last_name}
@@ -486,7 +526,7 @@ async function loadUsersList() {
             <td class="p-4"><span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-gray-100 text-gray-600">${u.role}</span></td>
             <td class="p-4">
                 ${u.role === 'volunteer' ? 
-                    `<select class="p-1 bg-white border rounded text-xs" onchange="assignVolunteerSport('${u.id}', this.value)">
+                    `<select class="p-1 bg-white border rounded text-xs outline-none focus:border-brand-primary" onchange="assignVolunteerSport('${u.id}', this.value)">
                         <option value="">-- Assign Sport --</option>
                         ${sportOptions}
                     </select>` 
