@@ -315,7 +315,7 @@ async function loadSchedule() {
     lucide.createIcons();
 }
 
-// --- 6. MATCH DETAILS MODAL ---
+// --- 6. MATCH DETAILS MODAL (UPDATED SORTING) ---
 window.openMatchDetails = async function(matchId) {
     const { data: match } = await supabaseClient.from('matches').select('*, sports(name, is_performance, unit)').eq('id', matchId).single();
     if(!match) return;
@@ -350,15 +350,26 @@ window.openMatchDetails = async function(matchId) {
         if (!results || results.length === 0) {
             tbody.innerHTML = '<tr><td colspan="3" class="px-4 py-8 text-center text-gray-400 italic">No results available yet.</td></tr>';
         } else {
-            // --- CRITICAL SORT: Low to High (Rank 1 top) ---
-            results.sort((a, b) => (a.rank || 999) - (b.rank || 999));
+            // --- UPDATED SORT: Strict Low to High on Result Value ---
+            results.sort((a, b) => {
+                // If ranks exist (Completed event), sort by Rank
+                if (match.status === 'Completed' && a.rank && b.rank) return a.rank - b.rank;
+                
+                // If Live/No Rank, sort by raw value (Low to High)
+                const valA = parseFloat(a.result) || 99999;
+                const valB = parseFloat(b.result) || 99999;
+                return valA - valB; 
+            });
 
-            tbody.innerHTML = results.map(r => {
-                let rankIcon = r.rank;
-                if(r.rank === 1) rankIcon = '🥇';
-                if(r.rank === 2) rankIcon = '🥈';
-                if(r.rank === 3) rankIcon = '🥉';
-                if(!r.rank) rankIcon = '-';
+            tbody.innerHTML = results.map((r, index) => {
+                // Logic to show Rank if available, otherwise just order number
+                let displayRank = r.rank;
+                if(!displayRank) displayRank = index + 1; // Temporary visual rank for live view
+                
+                let rankIcon = displayRank;
+                if(displayRank === 1) rankIcon = '🥇';
+                if(displayRank === 2) rankIcon = '🥈';
+                if(displayRank === 3) rankIcon = '🥉';
 
                 return `
                 <tr class="bg-white dark:bg-gray-800 border-b dark:border-gray-700">
@@ -408,7 +419,7 @@ async function loadSquadList(teamId, containerId) {
     `).join('');
 }
 
-// --- 7. TEAMS MODULE ---
+// --- 7. TEAMS MODULE (UPDATED: ENFORCE LIMIT) ---
 window.toggleTeamView = function(view) {
     document.getElementById('team-marketplace').classList.add('hidden');
     document.getElementById('team-locker').classList.add('hidden');
@@ -478,7 +489,18 @@ window.loadTeamMarketplace = async function() {
 
     const teamsWithCounts = await Promise.all(teamPromises);
 
-    container.innerHTML = teamsWithCounts.map(t => `
+    container.innerHTML = teamsWithCounts.map(t => {
+        // --- UPDATED LOGIC: Check for Full Team ---
+        const isFull = t.seatsLeft <= 0;
+        const btnText = isFull ? "Team Full" : "View Squad & Join";
+        const btnClass = isFull 
+            ? "w-full py-3 bg-gray-300 dark:bg-gray-700 text-gray-500 cursor-not-allowed text-xs font-bold rounded-xl"
+            : "w-full py-3 bg-black dark:bg-white dark:text-black text-white text-xs font-bold rounded-xl shadow-lg active:scale-95 transition-transform hover:opacity-90";
+        
+        // Prevent click if full
+        const action = isFull ? "" : `window.viewSquadAndJoin('${t.id}', '${t.sports.name}', ${t.seatsLeft})`;
+
+        return `
         <div class="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm mb-3">
             <div class="flex justify-between items-start mb-3">
                 <div>
@@ -487,18 +509,22 @@ window.loadTeamMarketplace = async function() {
                     <p class="text-xs text-gray-400">Capt: ${t.captain.first_name}</p>
                 </div>
                 <div class="text-center">
-                    <span class="block text-xl font-black ${t.seatsLeft > 0 ? 'text-brand-primary' : 'text-red-500'}">${t.seatsLeft}</span>
+                    <span class="block text-xl font-black ${isFull ? 'text-gray-400' : 'text-brand-primary'}">${Math.max(0, t.seatsLeft)}</span>
                     <span class="text-[9px] text-gray-400 uppercase font-bold">Seats Left</span>
                 </div>
             </div>
-            <button onclick="window.viewSquadAndJoin('${t.id}', '${t.sports.name}')" class="w-full py-3 bg-black dark:bg-white dark:text-black text-white text-xs font-bold rounded-xl shadow-lg active:scale-95 transition-transform hover:opacity-90">
-                View Squad & Join
+            <button onclick="${action}" class="${btnClass}" ${isFull ? 'disabled' : ''}>
+                ${btnText}
             </button>
         </div>
-    `).join('');
+    `}).join('');
 }
 
-window.viewSquadAndJoin = async function(teamId, sportName) {
+// --- UPDATED: Pass seatsLeft to avoid race conditions/negative logic ---
+window.viewSquadAndJoin = async function(teamId, sportName, seatsLeft) {
+    // Safety check again
+    if(seatsLeft <= 0) return showToast("❌ This team is full!", "error");
+
     const sportId = await getSportIdByName(sportName);
     
     if(!myRegistrations.includes(sportId)) return showToast(`⚠️ You must Register for ${sportName} first!`, "error");
