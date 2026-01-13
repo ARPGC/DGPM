@@ -7,6 +7,9 @@ let currentMatchViewFilter = 'Scheduled';
 let allTeamsCache = []; // Search Cache
 let dataCache = []; // Export Cache
 let allSportsCache = []; // Volunteer Assignment Cache
+let allRegistrationsCache = []; // Registration Filter Cache
+let currentSort = { key: 'created_at', asc: false }; // Default Sort
+
 const DEFAULT_AVATAR = "https://t4.ftcdn.net/jpg/05/89/93/27/360_F_589932782_vQAEAZhHnq1QCGu5ikwrYaQD0Mmurm0N.jpg";
 
 // --- INITIALIZATION ---
@@ -14,7 +17,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if(window.lucide) lucide.createIcons();
     injectToastContainer();
     injectScheduleModal(); // Ensure Modals Exist
-    injectWinnerModal();   // New: Manual Winner Declaration
+    injectWinnerModal();   // Manual Winner Declaration
     await checkAdminAuth();
     switchView('dashboard');
 });
@@ -57,6 +60,7 @@ function adminLogout() {
 window.switchView = function(viewId) {
     currentView = viewId;
     
+    // Toggle Visibility
     document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
     const target = document.getElementById('view-' + viewId);
     if(target) {
@@ -66,25 +70,30 @@ window.switchView = function(viewId) {
         target.classList.add('animate-fade-in');
     }
 
+    // Update Sidebar
     document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
     const navBtn = document.getElementById('nav-' + viewId);
     if(navBtn) navBtn.classList.add('active');
 
+    // Update Title
     const titleEl = document.getElementById('page-title');
     if(titleEl) titleEl.innerText = viewId.charAt(0).toUpperCase() + viewId.slice(1);
 
+    // Toggle Export Buttons
     const globalActions = document.getElementById('global-actions');
     if(globalActions) {
-        if (['users', 'teams', 'matches', 'logs'].includes(viewId)) globalActions.classList.remove('hidden');
+        if (['users', 'teams', 'matches', 'logs', 'registrations'].includes(viewId)) globalActions.classList.remove('hidden');
         else globalActions.classList.add('hidden');
     }
 
+    // Data Loading Routing
     dataCache = [];
     if(viewId === 'users') loadUsersList();
     if(viewId === 'sports') loadSportsList();
     if(viewId === 'matches') { setupMatchFilters(); loadMatches('Scheduled'); }
     if(viewId === 'teams') loadTeamsList();
     if(viewId === 'logs') loadActivityLogs();
+    if(viewId === 'registrations') loadRegistrationsList();
 }
 
 // --- 3. EXPORT SYSTEM ---
@@ -335,6 +344,7 @@ async function initTournamentRound(sportId, sportName, sportType) {
     else if (candidates.length <= 8) matchType = 'Quarter-Final';
 
     if (candidates.length <= 4) {
+        // Merge Pools for Semi/Finals
         candidates.sort(() => Math.random() - 0.5); 
         generatePairsFromList(candidates, round, matchType);
     } else {
@@ -427,7 +437,7 @@ async function confirmSchedule(sportId) {
     }
 }
 
-// --- 7. NEW FEATURE: FORCE WINNER (3 POSITIONS) ---
+// --- 7. MANUAL WINNER DECLARATION (Fix Duplicate Results) ---
 async function openForceWinnerModal(sportId, sportName) {
     const { data: teams } = await supabaseClient.from('teams').select('id, name').eq('sport_id', sportId);
     if(!teams || teams.length === 0) return showToast("No teams found.", "error");
@@ -454,33 +464,162 @@ async function confirmForceWinner(sportId, sportName) {
     if(!gId) return showToast("Must select at least GOLD winner.", "error");
     if(!confirm(`Confirm Podium for ${sportName}?\n1. ${gName}\n2. ${sName}\n3. ${bName}`)) return;
 
-    // SAVE AS A SPECIAL "FINAL" ENTRY SO STUDENT PORTAL SEES IT
     const winnersData = { gold: gName, silver: sName, bronze: bName };
     const winnerText = `Gold: ${gName}, Silver: ${sName}, Bronze: ${bName}`;
 
-    const { error } = await supabaseClient.from('matches').insert({
-        sport_id: sportId,
-        team1_name: "Tournament Result",
-        team2_name: "Official Declaration",
-        start_time: new Date().toISOString(),
-        location: "Admin Panel",
-        round_number: 100, // Highest round
-        status: 'Completed',
-        match_type: 'Final', // Ensures visibility
-        winner_id: gId,
-        winner_text: winnerText,
-        winners_data: winnersData
-    });
+    // CHECK IF A FINAL ALREADY EXISTS (Prevents duplicates)
+    const { data: existing } = await supabaseClient
+        .from('matches')
+        .select('id')
+        .eq('sport_id', sportId)
+        .eq('match_type', 'Final')
+        .eq('status', 'Completed')
+        .limit(1);
+
+    let error;
+    if (existing && existing.length > 0) {
+        // UPDATE Existing
+        const { error: updErr } = await supabaseClient.from('matches').update({
+            winner_id: gId,
+            winner_text: winnerText,
+            winners_data: winnersData
+        }).eq('id', existing[0].id);
+        error = updErr;
+    } else {
+        // INSERT New
+        const { error: insErr } = await supabaseClient.from('matches').insert({
+            sport_id: sportId,
+            team1_name: "Tournament Result",
+            team2_name: "Official Declaration",
+            start_time: new Date().toISOString(),
+            location: "Admin Panel",
+            round_number: 100,
+            status: 'Completed',
+            match_type: 'Final',
+            winner_id: gId,
+            winner_text: winnerText,
+            winners_data: winnersData
+        });
+        error = insErr;
+    }
 
     if(error) showToast("Error: " + error.message, "error");
     else {
-        showToast("Podium Declared & Published!", "success");
-        logAdminAction('FORCE_WINNER', `Declared winners for ${sportName}`);
+        showToast("Podium Updated Successfully!", "success");
+        logAdminAction('FORCE_WINNER', `Updated winners for ${sportName}`);
         closeModal('modal-force-winner');
     }
 }
 
-// --- 8. MATCH MANAGEMENT ---
+// --- 8. REGISTRATIONS LIST VIEW (New Feature) ---
+async function loadRegistrationsList() {
+    const tbody = document.getElementById('registrations-table-body');
+    if(!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center">Loading registrations...</td></tr>';
+
+    const { data: regs, error } = await supabaseClient
+        .from('registrations')
+        .select(`
+            created_at, status,
+            users:user_id(first_name, last_name, student_id, class_name, gender, mobile, email),
+            sports:sport_id(name)
+        `)
+        .order('created_at', { ascending: false });
+
+    if(error) return showToast("Failed to load registrations", "error");
+
+    // Flatten Data for Cache & Display
+    allRegistrationsCache = regs.map(r => ({
+        name: `${r.users.first_name} ${r.users.last_name}`,
+        student_id: r.users.student_id,
+        class: r.users.class_name,
+        category: (['FYJC', 'SYJC'].includes(r.users.class_name)) ? 'Junior' : 'Senior',
+        gender: r.users.gender,
+        sport: r.sports.name,
+        mobile: r.users.mobile,
+        email: r.users.email,
+        date: new Date(r.created_at).toLocaleDateString()
+    }));
+
+    // Populate Filters
+    const sports = [...new Set(allRegistrationsCache.map(r => r.sport))].sort();
+    const sportSelect = document.getElementById('filter-reg-sport');
+    if(sportSelect) {
+        sportSelect.innerHTML = `<option value="">All Sports</option>` + sports.map(s => `<option value="${s}">${s}</option>`).join('');
+    }
+
+    renderRegistrations(allRegistrationsCache);
+}
+
+function renderRegistrations(data) {
+    const tbody = document.getElementById('registrations-table-body');
+    const countEl = document.getElementById('reg-count');
+    if(!tbody) return;
+
+    if(countEl) countEl.innerText = data.length;
+    dataCache = data; // Update export cache
+
+    if(data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="p-8 text-center text-gray-400 font-bold">No records found matching filters.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = data.map(r => `
+        <tr class="border-b border-gray-50 hover:bg-indigo-50/30 transition-colors">
+            <td class="p-4">
+                <div class="font-bold text-gray-900">${r.name}</div>
+                <div class="text-xs text-gray-500">${r.email}</div>
+            </td>
+            <td class="p-4"><span class="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs font-bold uppercase">${r.sport}</span></td>
+            <td class="p-4 text-sm text-gray-600 font-medium">${r.class} <span class="text-xs text-gray-400">(${r.student_id})</span></td>
+            <td class="p-4 text-sm text-gray-600">${r.gender}</td>
+            <td class="p-4 text-sm font-mono text-gray-600">${r.mobile}</td>
+            <td class="p-4 text-right text-xs text-gray-400 font-bold">${r.date}</td>
+        </tr>
+    `).join('');
+}
+
+window.filterRegistrations = function() {
+    const search = document.getElementById('reg-search').value.toLowerCase();
+    const sport = document.getElementById('filter-reg-sport').value;
+    const gender = document.getElementById('filter-reg-gender').value;
+    const cls = document.getElementById('filter-reg-class').value;
+
+    const filtered = allRegistrationsCache.filter(r => {
+        const matchesSearch = r.name.toLowerCase().includes(search) || r.student_id.toLowerCase().includes(search);
+        const matchesSport = sport === "" || r.sport === sport;
+        const matchesGender = gender === "" || r.gender === gender;
+        const matchesClass = cls === "" || r.category === cls;
+        return matchesSearch && matchesSport && matchesGender && matchesClass;
+    });
+
+    renderRegistrations(filtered);
+}
+
+window.sortRegistrations = function(key) {
+    currentSort.asc = (currentSort.key === key) ? !currentSort.asc : true;
+    currentSort.key = key;
+
+    const sorted = [...dataCache].sort((a, b) => {
+        const valA = a[key].toString().toLowerCase();
+        const valB = b[key].toString().toLowerCase();
+        if(valA < valB) return currentSort.asc ? -1 : 1;
+        if(valA > valB) return currentSort.asc ? 1 : -1;
+        return 0;
+    });
+
+    renderRegistrations(sorted);
+}
+
+window.resetRegFilters = function() {
+    document.getElementById('reg-search').value = '';
+    document.getElementById('filter-reg-sport').value = '';
+    document.getElementById('filter-reg-gender').value = '';
+    document.getElementById('filter-reg-class').value = '';
+    renderRegistrations(allRegistrationsCache);
+}
+
+// --- 9. MATCH MANAGEMENT ---
 
 window.loadMatches = async function(statusFilter = 'Scheduled') {
     currentMatchViewFilter = statusFilter;
@@ -550,7 +689,7 @@ window.startMatch = async function(matchId) {
     loadSportsList();
 }
 
-// --- 9. USERS (PROMOTION & RESET) ---
+// --- 10. USERS (PROMOTION & RESET) ---
 async function loadUsersList() {
     const tbody = document.getElementById('users-table-body');
     if(!tbody) return;
@@ -614,7 +753,7 @@ window.filterUsers = function() {
     });
 }
 
-// --- 10. ACTIVITY LOGS ---
+// --- 11. ACTIVITY LOGS ---
 async function loadActivityLogs() {
     const tbody = document.getElementById('logs-table-body');
     if(!tbody) return;
@@ -635,7 +774,7 @@ async function loadActivityLogs() {
     }
 }
 
-// --- 11. TEAMS ---
+// --- 12. TEAMS ---
 async function loadTeamsList() {
     const grid = document.getElementById('teams-grid');
     if(!grid) return;
