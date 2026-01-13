@@ -2,7 +2,7 @@
 // URJA 2026 - VOLUNTEER SCORING DASHBOARD
 // ==========================================
 
-(function() { // <--- WRAPPED TO PREVENT "ALREADY DECLARED" ERRORS
+(function() { // Wrapped in IIFE for safety
 
     // --- 1. CONFIGURATION CHECKS ---
     if (typeof CONFIG === 'undefined' || typeof CONFIG_REALTIME === 'undefined') {
@@ -73,7 +73,6 @@
         loadMyMatches();
     }
 
-    // Assign logout to window so HTML button can access it
     window.volunteerLogout = function() {
         supabaseClient.auth.signOut();
         window.location.href = 'login.html';
@@ -147,8 +146,15 @@
             return;
         }
 
+        // --- SORTING LOGIC: LIVE EVENTS FIRST ---
+        matches.sort((a, b) => {
+            if (a.status === 'Live' && b.status !== 'Live') return -1; // a comes first
+            if (a.status !== 'Live' && b.status === 'Live') return 1;  // b comes first
+            return new Date(a.start_time) - new Date(b.start_time); // Otherwise sort by time
+        });
+
         container.innerHTML = matches.map(m => `
-            <div class="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm relative overflow-hidden transition-all hover:shadow-md">
+            <div class="bg-white p-5 rounded-2xl border ${m.status === 'Live' ? 'border-red-100 shadow-lg shadow-red-50' : 'border-gray-200 shadow-sm'} relative overflow-hidden transition-all hover:shadow-md">
                 ${m.status === 'Live' ? 
                     `<div class="absolute top-0 right-0 bg-red-600 text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl animate-pulse flex items-center gap-1"><span class="w-1.5 h-1.5 bg-white rounded-full"></span> LIVE</div>` 
                 : ''}
@@ -187,12 +193,13 @@
         if(window.lucide) lucide.createIcons();
     }
 
-    // --- 8. MATCH ACTIONS (Exposed to Window) ---
+    // --- 8. MATCH ACTIONS ---
     
-    // START MATCH
+    // START MATCH (Auto-opens Scoring)
     window.startMatch = async function(matchId) {
-        if(!confirm("Start match? It will go LIVE for students.")) return;
+        if(!confirm("Start match? It will go LIVE immediately.")) return;
 
+        // 1. Update Main DB
         const { error } = await supabaseClient
             .from('matches')
             .update({ status: 'Live', is_live: true, score1: 0, score2: 0 })
@@ -200,9 +207,18 @@
 
         if (error) return showToast("Error starting match", "error");
 
-        showToast("Match LIVE!", "success");
+        showToast("Match LIVE! Opening scoring...", "success");
+        
+        // 2. Sync to Realtime
         await syncToRealtime(matchId);
-        loadMyMatches();
+        
+        // 3. Reload List (Puts this match at top)
+        await loadMyMatches();
+        
+        // 4. AUTO-OPEN SCORING MODAL
+        setTimeout(() => {
+            window.openScoring(matchId);
+        }, 500); // Slight delay for smooth UX
     }
 
     // SCORING MODAL
@@ -261,7 +277,7 @@
         // 2. Sync to Realtime DB
         await syncToRealtime(currentMatchId);
 
-        showToast("Synced!", "success");
+        showToast("Scores Updated & Synced!", "success");
         btn.innerHTML = originalText;
         btn.disabled = false;
         closeModal('modal-scoring');
@@ -270,7 +286,7 @@
 
     // END MATCH
     window.endMatch = async function() {
-        if(!confirm("End match? This is final.")) return;
+        if(!confirm("End match? This will declare the winner.")) return;
 
         let winnerText = '';
         const t1 = document.getElementById('score-t1-name').innerText;
@@ -294,7 +310,7 @@
         if (error) return showToast("Error ending match", "error");
 
         await syncToRealtime(currentMatchId);
-        showToast("Match Ended", "success");
+        showToast("Match Ended Successfully", "success");
         closeModal('modal-scoring');
         loadMyMatches();
     }
