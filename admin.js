@@ -4,6 +4,12 @@
 
 // --- 1. CONFIGURATION & CLIENTS ---
 
+// Safety Check for Configs
+if (typeof CONFIG === 'undefined' || typeof CONFIG_REALTIME === 'undefined') {
+    console.error("CRITICAL ERROR: Configuration files missing. Ensure config.js and config2.js are loaded.");
+    alert("System Error: Config missing. Check console.");
+}
+
 // A. MAIN PROJECT (Project A) - Read/Write for Admin, Auth, Official Records
 const supabaseClient = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
 
@@ -658,13 +664,13 @@ async function confirmForceWinner(sportId, sportName) {
     closeModal('modal-force-winner');
 }
 
-// --- 13. REGISTRATIONS LIST VIEW (New Feature) ---
+// --- 13. REGISTRATIONS LIST VIEW (FIXED: REMOVED STATUS) ---
 async function loadRegistrationsList() {
     const tbody = document.getElementById('registrations-table-body');
     if(!tbody) return;
     tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center">Loading registrations...</td></tr>';
 
-    // FIX: Removed 'status' field causing 400 Error
+    // FIX: Removed 'status' field to prevent 400 Error
     const { data: regs, error } = await supabaseClient
         .from('registrations')
         .select(`
@@ -843,7 +849,7 @@ window.startMatch = async function(matchId) {
     loadSportsList();
 }
 
-// --- 15. USERS & TEAMS MANAGEMENT (Keep existing logic) ---
+// --- 15. USERS & TEAMS MANAGEMENT ---
 async function loadUsersList() {
     const tbody = document.getElementById('users-table-body');
     if(!tbody) return;
@@ -896,7 +902,75 @@ window.filterUsers = function() {
     });
 }
 
-// --- 16. UTILS (MODALS & TOASTS) ---
+// --- 16. TEAMS ---
+async function loadTeamsList() {
+    const grid = document.getElementById('teams-grid');
+    if(!grid) return;
+    grid.innerHTML = '<p class="col-span-3 text-center text-gray-400 py-10">Loading teams...</p>';
+
+    if(!document.getElementById('teams-search-container')) {
+        const div = document.createElement('div');
+        div.id = 'teams-search-container';
+        div.className = "col-span-3 mb-4 flex gap-2";
+        div.innerHTML = `<input type="text" id="team-search-input" onkeyup="filterTeamsList()" placeholder="Search Teams..." class="flex-1 p-3 bg-white border border-gray-200 rounded-xl text-sm outline-none focus:border-black">`;
+        grid.parentElement.insertBefore(div, grid);
+    }
+
+    const { data: teams } = await supabaseClient.from('teams').select('*, sports(name), captain:users!captain_id(first_name, last_name)').order('created_at', { ascending: false });
+    allTeamsCache = teams || [];
+    dataCache = teams;
+    renderTeams(allTeamsCache);
+}
+
+window.filterTeamsList = function() {
+    const q = document.getElementById('team-search-input').value.toLowerCase();
+    renderTeams(allTeamsCache.filter(t => t.name.toLowerCase().includes(q)));
+}
+
+function renderTeams(teams) {
+    const grid = document.getElementById('teams-grid');
+    if(teams.length === 0) { grid.innerHTML = '<p class="col-span-3 text-center text-gray-400">No teams found.</p>'; return; }
+    grid.innerHTML = teams.map(t => `
+        <div class="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">
+            <div class="flex justify-between items-start mb-3">
+                <span class="text-[10px] font-bold uppercase bg-gray-100 px-2 py-1 rounded text-gray-500">${t.sports.name}</span>
+                <span class="text-[10px] font-bold uppercase ${t.status === 'Locked' ? 'text-red-500' : 'text-green-500'}">${t.status}</span>
+            </div>
+            <h4 class="font-bold text-lg text-gray-900">${t.name}</h4>
+            <p class="text-xs text-gray-500 mb-4">Capt: ${t.captain?.first_name || 'Unknown'}</p>
+            <button onclick="viewTeamSquad('${t.id}', '${t.name}')" class="w-full py-2 bg-indigo-50 text-indigo-600 text-xs font-bold rounded-lg hover:bg-indigo-100 transition-colors">View Squad</button>
+        </div>`).join('');
+}
+
+window.viewTeamSquad = async function(teamId, teamName) {
+    const { data: members } = await supabaseClient.from('team_members').select('users(first_name, last_name)').eq('team_id', teamId).eq('status', 'Accepted');
+    let msg = `Squad for ${teamName}:\n\n`;
+    if(members) members.forEach((m, i) => msg += `${i+1}. ${m.users.first_name} ${m.users.last_name}\n`);
+    alert(msg);
+}
+
+// --- 17. ACTIVITY LOGS ---
+async function loadActivityLogs() {
+    const tbody = document.getElementById('logs-table-body');
+    if(!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center">Loading...</td></tr>';
+    
+    const { data: logs } = await supabaseClient.from('admin_logs').select('*').order('created_at', { ascending: false }).limit(100);
+    
+    if(logs) {
+        dataCache = logs;
+        tbody.innerHTML = logs.map(l => `
+            <tr class="border-b border-gray-50">
+                <td class="p-4 text-xs text-gray-500 font-mono">${new Date(l.created_at).toLocaleString()}</td>
+                <td class="p-4 font-bold text-gray-800">${l.admin_email}</td>
+                <td class="p-4"><span class="bg-gray-100 px-2 py-1 rounded text-xs font-bold">${l.action}</span></td>
+                <td class="p-4 text-gray-600 text-sm">${l.details}</td>
+            </tr>
+        `).join('');
+    }
+}
+
+// --- 18. UTILS (MODALS & TOASTS) ---
 window.closeModal = (id) => document.getElementById(id).classList.add('hidden');
 
 function setupMatchFilters() {
