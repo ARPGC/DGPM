@@ -228,7 +228,7 @@ function setupTabSystem() {
 
 // --- 4. DASHBOARD (REALTIME + MAIN DB) ---
 async function loadDashboard() {
-    // 1. Live Matches (Realtime DB - High Priority - Top of Dash)
+    // 1. Live Matches (Realtime DB - High Priority)
     loadLiveMatches();
     
     // 2. Upcoming Matches (Main DB - Safe Fallback)
@@ -245,14 +245,12 @@ async function loadLiveMatches() {
     
     if(!container || !list) return;
 
-    // Fetch from the Realtime DB table 'live_matches'
     const { data: matches } = await realtimeClient
         .from('live_matches')
         .select('*')
         .eq('status', 'Live')
         .order('updated_at', { ascending: false });
 
-    // Show/Hide container based on data presence
     if (!matches || matches.length === 0) {
         container.classList.add('hidden'); 
         return;
@@ -261,36 +259,29 @@ async function loadLiveMatches() {
     container.classList.remove('hidden');
     
     list.innerHTML = matches.map(m => `
-        <div onclick="openMatchDetails('${m.original_match_id}')" class="bg-white dark:bg-gray-800 p-5 rounded-3xl border border-red-100 dark:border-red-900/30 shadow-lg shadow-red-50/50 relative overflow-hidden mb-4 animate-fade-in cursor-pointer active:scale-[0.98] transition-transform">
-            <div class="absolute top-0 right-0 bg-red-600 text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl animate-pulse flex items-center gap-1 z-10">
+        <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-red-100 dark:border-red-900/30 shadow-lg shadow-red-50/50 relative overflow-hidden mb-4 animate-fade-in">
+            <div class="absolute top-0 right-0 bg-red-600 text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl animate-pulse flex items-center gap-1">
                 <span class="w-1.5 h-1.5 bg-white rounded-full"></span> LIVE
             </div>
+            <div class="text-[10px] font-bold text-red-500 uppercase tracking-widest mb-2">${m.sport_name}</div>
             
-            <div class="text-[10px] font-bold text-red-500 uppercase tracking-widest mb-4 opacity-80">${m.sport_name}</div>
-            
-            <div class="flex items-center justify-between gap-2 relative z-0">
+            <div class="flex items-center justify-between gap-2">
                 <div class="text-left w-5/12">
                     <h3 class="font-black text-lg text-gray-900 dark:text-white leading-tight truncate">${m.team1_name}</h3>
-                    <p class="text-3xl font-black text-gray-900 dark:text-white mt-1 tracking-tight">${m.score1 || 0}</p>
+                    <p class="text-3xl font-black text-gray-900 dark:text-white mt-1">${m.score1 || 0}</p>
                 </div>
-                
-                <div class="text-center w-2/12">
-                    <div class="text-[10px] font-bold text-gray-300 bg-gray-50 dark:bg-gray-700 rounded-full w-8 h-8 flex items-center justify-center mx-auto">VS</div>
-                </div>
-                
+                <div class="text-center w-2/12"><div class="text-[10px] font-bold text-gray-300 bg-gray-50 dark:bg-gray-700 rounded-full w-8 h-8 flex items-center justify-center mx-auto">VS</div></div>
                 <div class="text-right w-5/12">
                     <h3 class="font-black text-lg text-gray-900 dark:text-white leading-tight truncate">${m.team2_name}</h3>
-                    <p class="text-3xl font-black text-gray-900 dark:text-white mt-1 tracking-tight">${m.score2 || 0}</p>
+                    <p class="text-3xl font-black text-gray-900 dark:text-white mt-1">${m.score2 || 0}</p>
                 </div>
             </div>
-            
-            <div class="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700 flex justify-between items-center text-xs text-gray-400 font-bold">
-                <span class="flex items-center gap-1.5"><i data-lucide="map-pin" class="w-3.5 h-3.5 text-gray-300"></i> ${m.location || 'Main Ground'}</span>
-                <span class="bg-gray-50 dark:bg-gray-700/50 px-2 py-0.5 rounded text-[10px] uppercase">Round ${m.round_number || 1}</span>
+            <div class="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700 flex justify-between items-center text-xs text-gray-400 font-bold">
+                <span class="flex items-center gap-1"><i data-lucide="map-pin" class="w-3 h-3"></i> ${m.location || 'Ground'}</span>
+                <span>Round ${m.round_number || 1}</span>
             </div>
         </div>
     `).join('');
-    
     if(window.lucide) lucide.createIcons();
 }
 
@@ -301,40 +292,36 @@ async function loadUpcomingDashboard() {
 
     const { data: matches } = await supabaseClient
         .from('matches')
-        .select('*, sports(name, icon)')
+        .select('*, sports(name)')
         .eq('status', 'Scheduled')
         .order('start_time', { ascending: true })
         .limit(3);
 
     if(!matches || matches.length === 0) {
-        list.innerHTML = '<div class="text-xs text-gray-400 bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 text-center border border-dashed border-gray-200 dark:border-gray-700">No upcoming matches scheduled.</div>';
+        list.innerHTML = '<p class="text-xs text-gray-400 italic text-center py-4">No upcoming matches.</p>';
         return;
     }
 
     list.innerHTML = matches.map(m => `
-        <div onclick="openMatchDetails('${m.id}')" class="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform">
-            <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 flex items-center justify-center text-brand-primary dark:text-indigo-400 shrink-0">
-                    <i data-lucide="${m.sports.icon || 'calendar'}" class="w-5 h-5"></i>
-                </div>
-                <div>
-                    <div class="text-[10px] font-bold text-gray-400 uppercase tracking-wide">${m.sports.name}</div>
-                    <div class="font-bold text-sm text-gray-900 dark:text-white mt-0.5 leading-tight w-40 truncate">${m.team1_name} vs ${m.team2_name}</div>
-                </div>
+        <div class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between mb-2">
+            <div>
+                <div class="text-[10px] font-bold text-brand-primary uppercase tracking-wide">${m.sports.name}</div>
+                <div class="font-bold text-gray-900 dark:text-white text-sm mt-0.5">${m.team1_name} vs ${m.team2_name}</div>
+                <div class="text-xs text-gray-400 mt-1 flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> ${new Date(m.start_time).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
             </div>
-            <div class="text-right">
-                <div class="text-[10px] font-bold text-gray-400 uppercase">${new Date(m.start_time).toLocaleString('default', { weekday: 'short' })}</div>
-                <div class="text-sm font-black text-gray-900 dark:text-white">${new Date(m.start_time).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
+            <div class="bg-gray-50 dark:bg-gray-700 px-3 py-2 rounded-lg text-center">
+                <div class="text-[10px] font-bold text-gray-400 uppercase">${new Date(m.start_time).toLocaleString('default', { month: 'short' })}</div>
+                <div class="text-lg font-black text-gray-900 dark:text-white leading-none">${new Date(m.start_time).getDate()}</div>
             </div>
         </div>
     `).join('');
-    
     if(window.lucide) lucide.createIcons();
 }
 
 // C. CHAMPIONS (REALTIME DB)
 async function loadLatestChampions() {
     let container = document.getElementById('home-champions-list'); 
+    if (!container) container = document.getElementById('champions-list'); 
     if (!container) return;
 
     const { data: matches } = await realtimeClient
@@ -367,39 +354,35 @@ async function loadLatestChampions() {
     `}).join('');
 }
 
-// --- 5. REALTIME SUBSCRIPTION ---
+// --- 5. REALTIME SUBSCRIPTION (UPDATED FOR SCHEDULE) ---
 function setupRealtimeSubscription() {
     if (liveSubscription) return; 
 
-    // Listening to changes on the 'live_matches' table in the Realtime Database
     liveSubscription = realtimeClient
         .channel('public:live_matches')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'live_matches' }, (payload) => {
             const newData = payload.new;
-            const eventType = payload.eventType;
+            if (!newData) return;
 
-            console.log("Realtime Update:", eventType, newData);
-
-            if (eventType === 'DELETE') {
-                // If a live match is deleted, refresh dashboard to remove it
+            // GLOBAL: Update dashboard widgets if present
+            if (newData.status === 'Live') {
+                loadLiveMatches(); 
+            } else if (newData.status === 'Completed') {
                 loadLiveMatches();
-            } else if (newData) {
-                if (newData.status === 'Live') {
-                    // Update the live card at the top immediately
-                    loadLiveMatches();
-                    showToast(`⚡ UPDATE: ${newData.sport_name} Score Changed!`, "info");
-                } else if (newData.status === 'Completed') {
-                    // Refresh both live (to remove) and champions (to add)
-                    loadLiveMatches();
-                    loadLatestChampions();
-                    showToast(`🏆 RESULT: ${newData.sport_name} Finished!`, "success");
-                }
+                loadLatestChampions();
+            }
+
+            // SPECIFIC: If user is on SCHEDULE tab, refresh it instantly
+            const scheduleSection = document.getElementById('view-schedule');
+            if (scheduleSection && !scheduleSection.classList.contains('hidden')) {
+                loadSchedule(); // This will auto-sort Live to top
+                showToast(`Schedule Updated: ${newData.sport_name}`, "info");
             }
         })
         .subscribe();
 }
 
-// --- 6. SCHEDULE MODULE (Existing) ---
+// --- 6. SCHEDULE MODULE (UPDATED LOGIC) ---
 window.filterSchedule = function(view) {
     currentScheduleView = view;
     
@@ -422,10 +405,11 @@ async function loadSchedule() {
     const container = document.getElementById('schedule-list');
     container.innerHTML = '<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary mx-auto"></div>';
 
+    // Fetch ALL matches first, we will sort/filter in JS for the complex "Live First" logic
     const { data: matches } = await supabaseClient
         .from('matches')
         .select('*, sports(name, icon, type, is_performance)')
-        .order('start_time', { ascending: false });
+        .order('start_time', { ascending: true }); // Default sort by time ascending
 
     if (!matches || matches.length === 0) {
         container.innerHTML = `
@@ -438,14 +422,28 @@ async function loadSchedule() {
     }
 
     let filteredMatches = [];
+
     if(currentScheduleView === 'upcoming') {
+        // Filter: Live OR Scheduled OR Upcoming
         filteredMatches = matches.filter(m => ['Upcoming', 'Scheduled', 'Live'].includes(m.status));
+        
+        // SORT LOGIC: Live matches MUST be at the top. Then sort by time (Ascending).
+        filteredMatches.sort((a, b) => {
+            if (a.status === 'Live' && b.status !== 'Live') return -1;
+            if (a.status !== 'Live' && b.status === 'Live') return 1;
+            // If both are same status (e.g. both Live or both Scheduled), sort by time
+            return new Date(a.start_time) - new Date(b.start_time);
+        });
+
     } else {
+        // Filter: Completed Only
         filteredMatches = matches.filter(m => m.status === 'Completed');
+        // Sort: Newest Completed first
+        filteredMatches.sort((a, b) => new Date(b.start_time) - new Date(a.start_time));
     }
 
     if (filteredMatches.length === 0) {
-        container.innerHTML = `<p class="text-gray-400 font-medium text-center py-6">No ${currentScheduleView} matches.</p>`;
+        container.innerHTML = `<p class="text-gray-400 font-medium text-center py-5">No ${currentScheduleView} matches.</p>`;
         return;
     }
 
@@ -457,9 +455,15 @@ async function loadSchedule() {
         const timeStr = dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
         const dateStr = dateObj.toLocaleDateString([], {month: 'short', day: 'numeric'});
 
+        // Special styling for LIVE badge
         let badgeHtml = isLive 
-            ? `<span class="bg-red-50 dark:bg-red-900/40 text-red-600 dark:text-red-400 text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider animate-pulse flex items-center gap-1"><span class="w-1.5 h-1.5 bg-red-500 rounded-full"></span> LIVE</span>`
+            ? `<span class="bg-red-500 text-white text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider animate-pulse flex items-center gap-1 shadow-sm"><i data-lucide="radio" class="w-3 h-3"></i> LIVE NOW</span>`
             : `<span class="bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider">${dateStr} • ${timeStr}</span>`;
+
+        // Special border for Live cards
+        const containerClass = isLive 
+            ? "w-full bg-white dark:bg-gray-800 rounded-3xl border-2 border-red-500/50 p-5 shadow-lg relative overflow-hidden cursor-pointer active:scale-[0.98] transition-transform mb-4"
+            : "w-full bg-white dark:bg-gray-800 rounded-3xl border border-gray-100 dark:border-gray-700 p-5 shadow-sm relative overflow-hidden cursor-pointer active:scale-[0.98] transition-transform mb-3";
 
         let footerText = '';
         if(m.status === 'Completed') {
@@ -468,18 +472,20 @@ async function loadSchedule() {
             } else {
                 footerText = m.winner_text || `Winner: ${m.winner_id ? 'Determined' : 'TBA'}`;
             }
+        } else if(isLive) {
+             // For LIVE matches, show the score prominently in the footer area
+             footerText = isPerf ? 'Event in Progress...' : `SCORE: <span class="text-red-500 text-lg">${m.score1 || 0} - ${m.score2 || 0}</span>`;
         } else {
-            footerText = isPerf ? 'Entries Open' : `${m.score1 || 0} - ${m.score2 || 0}`;
+            footerText = isPerf ? 'Entries Open' : 'Vs';
         }
 
         return `
-        <div 
-            onclick="window.openMatchDetails('${m.id}')"
-            class="w-full bg-white dark:bg-gray-800 rounded-3xl border border-gray-100 dark:border-gray-700 p-5 shadow-sm relative overflow-hidden cursor-pointer active:scale-[0.98] transition-transform"
-        >
+        <div onclick="window.openMatchDetails('${m.id}')" class="${containerClass}">
             <div class="flex justify-between items-start mb-4">
                 ${badgeHtml}
-                <span class="text-xs text-gray-500 dark:text-gray-400 font-medium uppercase">${m.sports.name}</span>
+                <span class="text-xs text-gray-500 dark:text-gray-400 font-medium uppercase flex items-center gap-1">
+                   ${m.sports.icon ? `<i data-lucide="${m.sports.icon}" class="w-3 h-3"></i>` : ''} ${m.sports.name}
+                </span>
             </div>
             
             ${isPerf ? 
