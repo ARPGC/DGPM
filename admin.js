@@ -6,13 +6,16 @@ let tempSchedule = [];
 let currentMatchViewFilter = 'Scheduled'; 
 let allTeamsCache = []; // For search
 let dataCache = []; // For export
+let allSportsCache = []; // For volunteer assignment
 const DEFAULT_AVATAR = "https://t4.ftcdn.net/jpg/05/89/93/27/360_F_589932782_vQAEAZhHnq1QCGu5ikwrYaQD0Mmurm0N.jpg";
 
 // --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', async () => {
-    lucide.createIcons();
+    if(window.lucide) lucide.createIcons();
     injectToastContainer();
     await checkAdminAuth();
+    
+    // Initial Load
     switchView('dashboard');
 });
 
@@ -32,7 +35,6 @@ async function checkAdminAuth() {
     loadDashboardStats();
 }
 
-// Logs actions silently to the database
 async function logAdminAction(action, details) {
     try {
         await supabaseClient.from('admin_logs').insert({
@@ -40,9 +42,7 @@ async function logAdminAction(action, details) {
             action: action,
             details: details
         });
-    } catch (err) {
-        console.error("Logging failed:", err);
-    }
+    } catch (err) { console.error("Log failed:", err); }
 }
 
 function adminLogout() {
@@ -54,48 +54,44 @@ function adminLogout() {
 window.switchView = function(viewId) {
     currentView = viewId;
     
-    // UI Toggles
     document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
     const target = document.getElementById('view-' + viewId);
     if(target) {
         target.classList.remove('hidden');
         target.classList.remove('animate-fade-in');
-        void target.offsetWidth; // Trigger reflow
+        void target.offsetWidth; 
         target.classList.add('animate-fade-in');
     }
 
-    // Sidebar Active State
     document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
     const navBtn = document.getElementById('nav-' + viewId);
     if(navBtn) navBtn.classList.add('active');
 
-    // Update Title
-    const title = viewId.charAt(0).toUpperCase() + viewId.slice(1);
     const titleEl = document.getElementById('page-title');
-    if(titleEl) titleEl.innerText = title;
+    if(titleEl) titleEl.innerText = viewId.charAt(0).toUpperCase() + viewId.slice(1);
 
-    // Show/Hide Export Buttons
+    // Export Buttons Toggle
     const globalActions = document.getElementById('global-actions');
     if(globalActions) {
-        if (['users', 'teams', 'matches'].includes(viewId)) {
-            globalActions.classList.remove('hidden');
-        } else {
-            globalActions.classList.add('hidden');
-        }
+        if (['users', 'teams', 'matches'].includes(viewId)) globalActions.classList.remove('hidden');
+        else globalActions.classList.add('hidden');
     }
 
-    // Load Specific Data
-    dataCache = []; // Clear export cache
+    // Data Loaders
+    dataCache = [];
     if(viewId === 'users') loadUsersList();
     if(viewId === 'sports') loadSportsList();
-    if(viewId === 'matches') loadMatches('Scheduled');
+    if(viewId === 'matches') {
+        // Inject Match Filter Tabs if missing
+        setupMatchFilters();
+        loadMatches('Scheduled');
+    }
     if(viewId === 'teams') loadTeamsList();
 }
 
 // --- 3. EXPORT LOGIC ---
 window.exportCurrentPage = function(type) {
     if (!dataCache || dataCache.length === 0) return showToast("No data to export", "error");
-    
     const filename = `urja_${currentView}_${new Date().toISOString().split('T')[0]}`;
 
     if (type === 'excel') {
@@ -107,23 +103,13 @@ window.exportCurrentPage = function(type) {
     } 
     else if (type === 'pdf') {
         const { jsPDF } = window.jspdf;
-        const doc = new jsPDF('l'); // Landscape for better table fit
-        
-        // Extract headers from first object keys
+        const doc = new jsPDF('l'); 
         const headers = Object.keys(dataCache[0]).map(k => k.toUpperCase());
         const rows = dataCache.map(obj => Object.values(obj).map(v => String(v)));
 
         doc.setFontSize(18);
         doc.text(`URJA 2026 - ${currentView.toUpperCase()}`, 14, 22);
-        
-        doc.autoTable({
-            head: [headers],
-            body: rows,
-            startY: 30,
-            theme: 'grid',
-            styles: { fontSize: 8 }
-        });
-
+        doc.autoTable({ head: [headers], body: rows, startY: 30, theme: 'grid', styles: { fontSize: 8 } });
         doc.save(`${filename}.pdf`);
         logAdminAction('EXPORT_PDF', `Exported ${currentView}`);
     }
@@ -149,17 +135,16 @@ async function loadSportsList() {
     const tablePerf = document.getElementById('sports-table-performance');
     const tableTourn = document.getElementById('sports-table-tournament');
     
-    const loadingHtml = '<tr><td colspan="3" class="p-4 text-center text-gray-400">Loading...</td></tr>';
-    if(tablePerf) tablePerf.innerHTML = loadingHtml;
-    if(tableTourn) tableTourn.innerHTML = loadingHtml;
+    if(tablePerf) tablePerf.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-gray-400">Loading...</td></tr>';
+    if(tableTourn) tableTourn.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-gray-400">Loading...</td></tr>';
 
     const { data: sports } = await supabaseClient.from('sports').select('*').order('name');
     const { data: activeMatches } = await supabaseClient.from('matches').select('sport_id').neq('status', 'Completed');
     const activeSportIds = activeMatches ? activeMatches.map(m => m.sport_id) : [];
 
-    if(!sports || sports.length === 0) {
-        return; // Empty state handled by default
-    }
+    allSportsCache = sports || []; // Save for volunteer assignment
+
+    if(!sports || sports.length === 0) return;
 
     let perfHtml = '';
     let tourHtml = '';
@@ -196,7 +181,7 @@ async function loadSportsList() {
     if(tablePerf) tablePerf.innerHTML = perfHtml || '<tr><td colspan="3" class="p-4 text-center text-gray-400 italic">No events found.</td></tr>';
     if(tableTourn) tableTourn.innerHTML = tourHtml || '<tr><td colspan="3" class="p-4 text-center text-gray-400 italic">No tournaments found.</td></tr>';
     
-    lucide.createIcons();
+    if(window.lucide) lucide.createIcons();
 }
 
 window.openAddSportModal = () => document.getElementById('modal-add-sport').classList.remove('hidden');
@@ -206,18 +191,10 @@ window.handleAddSport = async function(e) {
     const name = document.getElementById('new-sport-name').value;
     const type = document.getElementById('new-sport-type').value;
     const size = document.getElementById('new-sport-size').value;
-
-    const isPerformance = name.toLowerCase().includes('race') || 
-                          name.toLowerCase().includes('jump') || 
-                          name.toLowerCase().includes('throw');
-
+    const isPerformance = name.toLowerCase().includes('race') || name.toLowerCase().includes('jump') || name.toLowerCase().includes('throw');
     const unit = isPerformance ? (name.toLowerCase().includes('race') ? 'Seconds' : 'Meters') : 'Points';
 
-    const { error } = await supabaseClient.from('sports').insert({
-        name, type, team_size: size, icon: 'trophy', 
-        is_performance: isPerformance, 
-        unit: unit
-    });
+    const { error } = await supabaseClient.from('sports').insert({ name, type, team_size: size, icon: 'trophy', is_performance: isPerformance, unit: unit });
 
     if(error) showToast(error.message, "error");
     else {
@@ -234,44 +211,26 @@ window.toggleSportStatus = async function(id, currentStatus) {
     loadSportsList();
 }
 
-// --- 6. SCHEDULER (FIXED) ---
+// --- 6. SCHEDULER (ROBUST VERSION) ---
 
 window.handleScheduleClick = async function(sportId, sportName, isPerformance, sportType) {
     if (isPerformance) {
-        if (confirm(`Start ${sportName}? This will initiate the event for volunteers.`)) {
-            await initPerformanceEvent(sportId, sportName);
-        }
+        if (confirm(`Start ${sportName}? This will initiate the event for volunteers.`)) await initPerformanceEvent(sportId, sportName);
     } else {
         await initTournamentRound(sportId, sportName, sportType);
     }
 }
 
-// PERFORMANCE
 async function initPerformanceEvent(sportId, sportName) {
     const { data: existing } = await supabaseClient.from('matches').select('id').eq('sport_id', sportId).neq('status', 'Completed');
     if (existing && existing.length > 0) return showToast("Event is already active!", "info");
 
-    const { data: regs } = await supabaseClient.from('registrations')
-        .select('user_id, users(first_name, last_name, student_id)')
-        .eq('sport_id', sportId);
-
+    const { data: regs } = await supabaseClient.from('registrations').select('user_id, users(first_name, last_name, student_id)').eq('sport_id', sportId);
     if (!regs || regs.length === 0) return showToast("No registrations found.", "error");
 
-    const participants = regs.map(r => ({
-        id: r.user_id,
-        name: `${r.users.first_name} ${r.users.last_name} (${r.users.student_id})`,
-        result: '',
-        rank: 0
-    }));
+    const participants = regs.map(r => ({ id: r.user_id, name: `${r.users.first_name} ${r.users.last_name} (${r.users.student_id})`, result: '', rank: 0 }));
 
-    const { error } = await supabaseClient.from('matches').insert({
-        sport_id: sportId,
-        team1_name: sportName,
-        team2_name: 'All Participants',
-        status: 'Live',
-        is_live: true,
-        performance_data: participants
-    });
+    const { error } = await supabaseClient.from('matches').insert({ sport_id: sportId, team1_name: sportName, team2_name: 'All Participants', status: 'Live', is_live: true, performance_data: participants });
 
     if (error) showToast(error.message, "error");
     else {
@@ -281,91 +240,53 @@ async function initPerformanceEvent(sportId, sportName) {
     }
 }
 
-// TOURNAMENT (NEXT ROUND FIX)
 async function initTournamentRound(sportId, sportName, sportType) {
     showToast("Analyzing Bracket...", "info");
     const intSportId = parseInt(sportId); 
 
-    // Get Latest Round Info
-    const { data: latestMatches } = await supabaseClient.from('matches')
-        .select('round_number, status')
-        .eq('sport_id', intSportId)
-        .order('round_number', { ascending: false })
-        .limit(1);
+    const { data: latestMatches } = await supabaseClient.from('matches').select('round_number, status').eq('sport_id', intSportId).order('round_number', { ascending: false }).limit(1);
 
     let round = 1;
     let candidates = [];
 
-    // ROUND 1 LOGIC
     if (!latestMatches || latestMatches.length === 0) {
-        if (sportType === 'Individual') {
-            await supabaseClient.rpc('prepare_individual_teams', { sport_id_input: intSportId });
-        }
+        // ROUND 1
+        if (sportType === 'Individual') await supabaseClient.rpc('prepare_individual_teams', { sport_id_input: intSportId });
         await supabaseClient.rpc('auto_lock_tournament_teams', { sport_id_input: intSportId });
 
         const { data: validTeams } = await supabaseClient.rpc('get_tournament_teams', { sport_id_input: intSportId });
         if (!validTeams || validTeams.length < 2) return showToast("Need at least 2 VALID TEAMS to start.", "error");
 
-        candidates = validTeams.map(t => ({ 
-            id: t.team_id, 
-            name: t.team_name,
-            category: t.category 
-        }));
-
-    } 
-    // NEXT ROUND LOGIC
-    else {
+        candidates = validTeams.map(t => ({ id: t.team_id, name: t.team_name, category: t.category }));
+    } else {
+        // NEXT ROUNDS
         const lastRound = latestMatches[0].round_number;
-        
-        // Check Pending Matches
-        const { count: pendingCount } = await supabaseClient
-            .from('matches')
-            .select('*', { count: 'exact', head: true })
-            .eq('sport_id', intSportId)
-            .eq('round_number', lastRound)
-            .neq('status', 'Completed');
+        const { count: pendingCount } = await supabaseClient.from('matches').select('*', { count: 'exact', head: true }).eq('sport_id', intSportId).eq('round_number', lastRound).neq('status', 'Completed');
 
         if (pendingCount > 0) return showToast(`Round ${lastRound} unfinished! (${pendingCount} matches left)`, "error");
 
         round = lastRound + 1;
-
-        // Fetch Winners
-        const { data: winners } = await supabaseClient
-            .from('matches')
-            .select('winner_id')
-            .eq('sport_id', intSportId)
-            .eq('round_number', lastRound)
-            .not('winner_id', 'is', null);
+        const { data: winners } = await supabaseClient.from('matches').select('winner_id').eq('sport_id', intSportId).eq('round_number', lastRound).not('winner_id', 'is', null);
 
         if (!winners || winners.length < 2) return showToast("Tournament Completed! (Winner Declared)", "success");
 
         const winnerIds = winners.map(w => w.winner_id);
-        
-        const { data: teamDetails } = await supabaseClient
-            .from('teams')
-            .select(`id, name, captain:users!captain_id(class_name)`)
-            .in('id', winnerIds);
+        const { data: teamDetails } = await supabaseClient.from('teams').select(`id, name, captain:users!captain_id(class_name)`).in('id', winnerIds);
 
         candidates = teamDetails.map(t => ({
-            id: t.id,
-            name: t.name,
-            category: (['FYJC', 'SYJC'].includes(t.captain?.class_name)) ? 'Junior' : 'Senior'
+            id: t.id, name: t.name, category: (['FYJC', 'SYJC'].includes(t.captain?.class_name)) ? 'Junior' : 'Senior'
         }));
     }
 
-    // PAIRING LOGIC (With Bye)
     tempSchedule = [];
-    
     let matchType = 'Regular';
     if (candidates.length === 2) matchType = 'Final';
     else if (candidates.length <= 4) matchType = 'Semi-Final';
 
     if (candidates.length <= 4) {
-        // Merge Pools for Semi/Finals
         candidates.sort(() => Math.random() - 0.5); 
         generatePairsFromList(candidates, round, matchType);
     } else {
-        // Split Pools
         const juniors = candidates.filter(c => c.category === 'Junior').sort(() => Math.random() - 0.5);
         const seniors = candidates.filter(c => c.category === 'Senior').sort(() => Math.random() - 0.5);
         generatePairsFromList(juniors, round, matchType);
@@ -376,34 +297,18 @@ async function initTournamentRound(sportId, sportName, sportType) {
 }
 
 function generatePairsFromList(list, round, matchType) {
-    // Bye Handling
     if (list.length % 2 !== 0) {
         const luckyTeam = list.pop(); 
-        tempSchedule.push({
-            t1: luckyTeam,
-            t2: { id: null, name: "BYE (Auto-Advance)" },
-            time: "10:00",
-            location: "N/A",
-            round: round,
-            type: 'Bye Round'
-        });
+        tempSchedule.push({ t1: luckyTeam, t2: { id: null, name: "BYE (Auto-Advance)" }, time: "10:00", location: "N/A", round: round, type: 'Bye Round' });
     }
     for (let i = 0; i < list.length; i += 2) {
-        tempSchedule.push({
-            t1: list[i],
-            t2: list[i+1],
-            time: "10:00",
-            location: "College Ground",
-            round: round,
-            type: matchType
-        });
+        tempSchedule.push({ t1: list[i], t2: list[i+1], time: "10:00", location: "College Ground", round: round, type: matchType });
     }
 }
 
 function openSchedulePreviewModal(sportName, round, schedule, sportId) {
     document.getElementById('preview-subtitle').innerText = `Generating Round ${round}`;
     const container = document.getElementById('schedule-preview-list');
-    
     const venueOptions = `<option value="College Ground">College Ground</option><option value="Badminton Hall">Badminton Hall</option><option value="Old Gymkhana">Old Gymkhana</option>`;
 
     container.innerHTML = schedule.map((m, idx) => `
@@ -450,37 +355,31 @@ async function confirmSchedule(sportId) {
 
     const { error } = await supabaseClient.from('matches').insert(inserts);
 
-    if(error) {
-        showToast(error.message, "error");
-        btn.innerText = "Confirm & Publish";
-        btn.disabled = false;
-    } else {
-        showToast("Round Generated Successfully!", "success");
+    if(error) { showToast(error.message, "error"); btn.innerText = "Confirm & Publish"; btn.disabled = false; } 
+    else {
+        showToast("Round Generated!", "success");
         logAdminAction('PUBLISH_ROUND', `Published round for Sport ID ${sportId}`);
         closeModal('modal-schedule-preview');
         loadSportsList();
-        loadMatches('Scheduled');
     }
 }
 
-// --- 7. USERS (With Reset & Export Cache) ---
+// --- 7. USERS (RESTORED FEATURES: PROMOTE, ASSIGN, RESET) ---
 async function loadUsersList() {
     const tbody = document.getElementById('users-table-body');
     if(!tbody) return;
     tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center">Loading...</td></tr>';
     
+    // Fetch users and sports for assignment
     const { data: users } = await supabaseClient.from('users').select('*').order('created_at', { ascending: false });
+    const { data: sports } = await supabaseClient.from('sports').select('id, name');
 
-    // Populate Cache for Export
-    dataCache = users.map(u => ({
-        Name: `${u.first_name} ${u.last_name}`,
-        Email: u.email,
-        Role: u.role,
-        Class: u.class_name,
-        Mobile: u.mobile
-    }));
+    // Populate Export Cache
+    dataCache = users.map(u => ({ Name: `${u.first_name} ${u.last_name}`, Email: u.email, Role: u.role, Class: u.class_name, Mobile: u.mobile }));
 
-    tbody.innerHTML = users.map(u => `
+    tbody.innerHTML = users.map(u => {
+        const sportOptions = sports.map(s => `<option value="${s.id}" ${u.assigned_sport_id === s.id ? 'selected' : ''}>${s.name}</option>`).join('');
+        return `
         <tr class="border-b border-gray-50 hover:bg-gray-50">
             <td class="p-4 flex items-center gap-3">
                 <img src="${u.avatar_url || DEFAULT_AVATAR}" class="w-8 h-8 rounded-full object-cover bg-gray-200">
@@ -489,14 +388,40 @@ async function loadUsersList() {
                     <div class="text-xs text-gray-500">${u.email}</div>
                 </div>
             </td>
-            <td class="p-4"><span class="px-2 py-1 rounded text-xs font-bold ${u.role==='admin'?'bg-purple-50 text-purple-600':'bg-gray-100 text-gray-600'} uppercase">${u.role}</span></td>
+            <td class="p-4"><span class="px-2 py-1 rounded text-xs font-bold ${u.role==='admin'?'bg-purple-50 text-purple-600': u.role==='volunteer'?'bg-indigo-50 text-indigo-600':'bg-gray-100 text-gray-600'} uppercase">${u.role}</span></td>
             <td class="p-4 text-gray-600">${u.class_name || '-'} <span class="text-xs text-gray-400">(${u.student_id})</span></td>
-            <td class="p-4 text-gray-600">${u.mobile || '-'}</td>
-            <td class="p-4 text-right">
+            
+            <td class="p-4">
+                ${u.role === 'volunteer' ? 
+                    `<select onchange="assignVolunteerSport('${u.id}', this.value)" class="p-1 text-xs border rounded bg-white">
+                        <option value="">-- Assign Sport --</option>
+                        ${sportOptions}
+                    </select>` 
+                : '-'}
+            </td>
+
+            <td class="p-4 text-right flex justify-end gap-2">
+                ${u.role !== 'admin' && u.role !== 'volunteer' ? 
+                    `<button onclick="promoteUser('${u.id}')" class="text-xs bg-indigo-50 text-indigo-600 px-3 py-1 rounded-lg font-bold hover:bg-indigo-100">Make Vol</button>` : ''}
+                
                 <button onclick="resetUserPassword('${u.id}', '${u.first_name}')" class="text-xs bg-red-50 text-red-600 px-3 py-1 rounded-lg font-bold hover:bg-red-100 border border-red-100">Reset Pass</button>
             </td>
         </tr>
-    `).join('');
+    `}).join('');
+}
+
+window.promoteUser = async function(userId) {
+    if(!confirm("Promote this user to Volunteer?")) return;
+    await supabaseClient.from('users').update({ role: 'volunteer' }).eq('id', userId);
+    showToast("User promoted to Volunteer!", "success");
+    logAdminAction('PROMOTE_USER', `Promoted User ID ${userId}`);
+    loadUsersList();
+}
+
+window.assignVolunteerSport = async function(userId, sportId) {
+    const val = sportId === "" ? null : sportId;
+    await supabaseClient.from('users').update({ assigned_sport_id: val }).eq('id', userId);
+    showToast("Volunteer Sport Assigned", "success");
 }
 
 window.resetUserPassword = async function(userId, name) {
@@ -516,13 +441,12 @@ window.filterUsers = function() {
     });
 }
 
-// --- 8. TEAMS (With Export Cache) ---
+// --- 8. TEAMS ---
 async function loadTeamsList() {
     const grid = document.getElementById('teams-grid');
     if(!grid) return;
     grid.innerHTML = '<p class="col-span-3 text-center text-gray-400 py-10">Loading teams...</p>';
 
-    // Add search bar if missing
     if(!document.getElementById('teams-search-container')) {
         const div = document.createElement('div');
         div.id = 'teams-search-container';
@@ -531,21 +455,9 @@ async function loadTeamsList() {
         grid.parentElement.insertBefore(div, grid);
     }
 
-    const { data: teams } = await supabaseClient
-        .from('teams')
-        .select('*, sports(name), captain:users!captain_id(first_name, last_name)')
-        .order('created_at', { ascending: false });
-
+    const { data: teams } = await supabaseClient.from('teams').select('*, sports(name), captain:users!captain_id(first_name, last_name)').order('created_at', { ascending: false });
     allTeamsCache = teams || [];
-
-    // Populate Export Cache
-    dataCache = teams.map(t => ({
-        Team: t.name,
-        Sport: t.sports.name,
-        Captain: `${t.captain?.first_name} ${t.captain?.last_name}`,
-        Status: t.status
-    }));
-
+    dataCache = teams.map(t => ({ Team: t.name, Sport: t.sports.name, Captain: `${t.captain?.first_name} ${t.captain?.last_name}`, Status: t.status }));
     renderTeams(allTeamsCache);
 }
 
@@ -557,7 +469,6 @@ window.filterTeamsList = function() {
 function renderTeams(teams) {
     const grid = document.getElementById('teams-grid');
     if(teams.length === 0) { grid.innerHTML = '<p class="col-span-3 text-center text-gray-400">No teams found.</p>'; return; }
-    
     grid.innerHTML = teams.map(t => `
         <div class="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">
             <div class="flex justify-between items-start mb-3">
@@ -567,8 +478,7 @@ function renderTeams(teams) {
             <h4 class="font-bold text-lg text-gray-900">${t.name}</h4>
             <p class="text-xs text-gray-500 mb-4">Capt: ${t.captain?.first_name || 'Unknown'}</p>
             <button onclick="viewTeamSquad('${t.id}', '${t.name}')" class="w-full py-2 bg-indigo-50 text-indigo-600 text-xs font-bold rounded-lg hover:bg-indigo-100 transition-colors">View Squad</button>
-        </div>
-    `).join('');
+        </div>`).join('');
 }
 
 window.viewTeamSquad = async function(teamId, teamName) {
@@ -578,33 +488,42 @@ window.viewTeamSquad = async function(teamId, teamName) {
     alert(msg);
 }
 
-// --- 9. MATCHES (With Export Cache) ---
+// --- 9. MATCHES (FILTERS RESTORED) ---
+function setupMatchFilters() {
+    const container = document.getElementById('view-matches');
+    if(!document.getElementById('match-filter-tabs')) {
+        const div = document.createElement('div');
+        div.id = 'match-filter-tabs';
+        div.className = "flex gap-2 mb-6 border-b border-gray-200 pb-2";
+        div.innerHTML = `
+            <button onclick="loadMatches('Scheduled')" id="btn-filter-scheduled" class="px-4 py-2 text-sm font-bold text-gray-500 hover:text-black">Scheduled</button>
+            <button onclick="loadMatches('Live')" id="btn-filter-live" class="px-4 py-2 text-sm font-bold text-gray-500 hover:text-black">Live</button>
+            <button onclick="loadMatches('Completed')" id="btn-filter-completed" class="px-4 py-2 text-sm font-bold text-gray-500 hover:text-black">Completed</button>
+        `;
+        container.insertBefore(div, document.getElementById('matches-grid'));
+    }
+}
+
 window.loadMatches = async function(statusFilter = 'Scheduled') {
     currentMatchViewFilter = statusFilter;
     
-    // Update Tabs
-    document.querySelectorAll('#view-matches button').forEach(b => { /* Assuming buttons exist in HTML structure provided previously */ });
+    // Update Tab Styles
+    document.querySelectorAll('#match-filter-tabs button').forEach(btn => {
+        if(btn.innerText === statusFilter) {
+            btn.className = "px-4 py-2 text-sm font-bold text-black border-b-2 border-black";
+        } else {
+            btn.className = "px-4 py-2 text-sm font-bold text-gray-500 hover:text-black";
+        }
+    });
 
     const container = document.getElementById('matches-grid');
     if(!container) return;
     container.innerHTML = '<p class="col-span-3 text-center text-gray-400 py-10">Loading matches...</p>';
 
-    const { data: matches } = await supabaseClient
-        .from('matches')
-        .select('*, sports(name, is_performance)')
-        .eq('status', statusFilter)
-        .order('start_time', { ascending: true });
+    const { data: matches } = await supabaseClient.from('matches').select('*, sports(name, is_performance)').eq('status', statusFilter).order('start_time', { ascending: true });
 
-    // Populate Export Cache
     if(matches) {
-        dataCache = matches.map(m => ({
-            Round: m.round_number,
-            Sport: m.sports.name,
-            Team1: m.team1_name,
-            Team2: m.team2_name,
-            Time: new Date(m.start_time).toLocaleString(),
-            Status: m.status
-        }));
+        dataCache = matches.map(m => ({ Round: m.round_number, Sport: m.sports.name, Team1: m.team1_name, Team2: m.team2_name, Time: new Date(m.start_time).toLocaleString(), Status: m.status }));
     }
 
     if (!matches || matches.length === 0) {
@@ -625,6 +544,7 @@ window.loadMatches = async function(statusFilter = 'Scheduled') {
                 <span class="text-[10px] font-bold text-gray-300 px-2">VS</span>
                 <h4 class="font-bold text-lg text-gray-900 leading-tight text-right w-1/3 truncate">${m.team2_name}</h4>
             </div>
+            ${m.status === 'Completed' ? `<div class="mt-2 pt-2 border-t text-center text-xs font-bold text-green-600">${m.winner_text || 'Completed'}</div>` : ''}
         </div>
     `).join('');
 }
@@ -647,10 +567,12 @@ function showToast(msg, type) {
     const txt = document.getElementById('toast-msg');
     const icon = document.getElementById('toast-icon');
     
-    txt.innerText = msg;
-    icon.innerHTML = type === 'error' ? '<i data-lucide="alert-circle" class="w-5 h-5 text-red-400"></i>' : '<i data-lucide="check-circle" class="w-5 h-5 text-green-400"></i>';
+    if(txt) txt.innerText = msg;
+    if(icon) icon.innerHTML = type === 'error' ? '<i data-lucide="alert-circle" class="w-5 h-5 text-red-400"></i>' : '<i data-lucide="check-circle" class="w-5 h-5 text-green-400"></i>';
     
-    lucide.createIcons();
-    t.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-10');
-    setTimeout(() => t.classList.add('opacity-0', 'pointer-events-none', 'translate-y-10'), 3000);
+    if(window.lucide) lucide.createIcons();
+    if(t) {
+        t.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-10');
+        setTimeout(() => t.classList.add('opacity-0', 'pointer-events-none', 'translate-y-10'), 3000);
+    }
 }
