@@ -218,7 +218,7 @@ function setupTabSystem() {
             activeNav.classList.remove('text-gray-400', 'dark:text-gray-500');
         }
 
-        if(tabId === 'dashboard') loadDashboard();
+        if(tabId === 'dashboard') loadDashboard(); 
         if(tabId === 'register') window.toggleRegisterView('new');
         if(tabId === 'teams') window.toggleTeamView('marketplace');
         if(tabId === 'schedule') window.filterSchedule('upcoming');
@@ -243,7 +243,8 @@ async function loadLiveMatches() {
     const container = document.getElementById('live-matches-container');
     const list = document.getElementById('live-matches-list');
     
-    if(!container || !list) return;
+    // Note: Use getElementById checks to prevent errors if elements don't exist in DOM
+    if(!list) return;
 
     const { data: matches } = await realtimeClient
         .from('live_matches')
@@ -251,12 +252,18 @@ async function loadLiveMatches() {
         .eq('status', 'Live')
         .order('updated_at', { ascending: false });
 
-    if (!matches || matches.length === 0) {
-        container.classList.add('hidden'); 
+    // If there is a container wrapper for live matches, toggle it
+    if (container) {
+        if (!matches || matches.length === 0) {
+            container.classList.add('hidden'); 
+            return;
+        }
+        container.classList.remove('hidden');
+    } else if (!matches || matches.length === 0) {
+        // If no container but list exists, maybe just clear list
+        list.innerHTML = '';
         return;
     }
-
-    container.classList.remove('hidden');
     
     list.innerHTML = matches.map(m => `
         <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-red-100 dark:border-red-900/30 shadow-lg shadow-red-50/50 relative overflow-hidden mb-4 animate-fade-in">
@@ -354,7 +361,7 @@ async function loadLatestChampions() {
     `}).join('');
 }
 
-// --- 5. REALTIME SUBSCRIPTION (UPDATED FOR SCHEDULE) ---
+// --- 5. REALTIME SUBSCRIPTION ---
 function setupRealtimeSubscription() {
     if (liveSubscription) return; 
 
@@ -364,25 +371,27 @@ function setupRealtimeSubscription() {
             const newData = payload.new;
             if (!newData) return;
 
-            // GLOBAL: Update dashboard widgets if present
+            // REFRESH DASHBOARD WIDGETS
             if (newData.status === 'Live') {
-                loadLiveMatches(); 
+                loadLiveMatches();
+                showToast(`Update: ${newData.sport_name} score changed!`);
             } else if (newData.status === 'Completed') {
                 loadLiveMatches();
                 loadLatestChampions();
+                showToast(`Result: ${newData.sport_name} finished!`);
             }
 
-            // SPECIFIC: If user is on SCHEDULE tab, refresh it instantly
-            const scheduleSection = document.getElementById('view-schedule');
-            if (scheduleSection && !scheduleSection.classList.contains('hidden')) {
-                loadSchedule(); // This will auto-sort Live to top
-                showToast(`Schedule Updated: ${newData.sport_name}`, "info");
+            // REFRESH SCHEDULE LIST (To re-sort LIVE events to top)
+            // Checks if the schedule tab is currently active before reloading
+            const scheduleView = document.getElementById('view-schedule');
+            if (scheduleView && !scheduleView.classList.contains('hidden')) {
+                loadSchedule();
             }
         })
         .subscribe();
 }
 
-// --- 6. SCHEDULE MODULE (UPDATED LOGIC) ---
+// --- 6. SCHEDULE MODULE ---
 window.filterSchedule = function(view) {
     currentScheduleView = view;
     
@@ -405,11 +414,11 @@ async function loadSchedule() {
     const container = document.getElementById('schedule-list');
     container.innerHTML = '<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary mx-auto"></div>';
 
-    // Fetch ALL matches first, we will sort/filter in JS for the complex "Live First" logic
+    // Fetches all matches initially, sorting happens after filtering in JS
     const { data: matches } = await supabaseClient
         .from('matches')
         .select('*, sports(name, icon, type, is_performance)')
-        .order('start_time', { ascending: true }); // Default sort by time ascending
+        .order('start_time', { ascending: true }); // Default fetch order
 
     if (!matches || matches.length === 0) {
         container.innerHTML = `
@@ -422,28 +431,25 @@ async function loadSchedule() {
     }
 
     let filteredMatches = [];
-
     if(currentScheduleView === 'upcoming') {
-        // Filter: Live OR Scheduled OR Upcoming
         filteredMatches = matches.filter(m => ['Upcoming', 'Scheduled', 'Live'].includes(m.status));
         
-        // SORT LOGIC: Live matches MUST be at the top. Then sort by time (Ascending).
+        // CUSTOM SORT: Live events MUST be at the top
         filteredMatches.sort((a, b) => {
-            if (a.status === 'Live' && b.status !== 'Live') return -1;
-            if (a.status !== 'Live' && b.status === 'Live') return 1;
-            // If both are same status (e.g. both Live or both Scheduled), sort by time
+            if (a.status === 'Live' && b.status !== 'Live') return -1; // a comes first
+            if (a.status !== 'Live' && b.status === 'Live') return 1;  // b comes first
+            // If statuses are same priority, sort by time
             return new Date(a.start_time) - new Date(b.start_time);
         });
 
     } else {
-        // Filter: Completed Only
         filteredMatches = matches.filter(m => m.status === 'Completed');
-        // Sort: Newest Completed first
+        // For results, latest completed first
         filteredMatches.sort((a, b) => new Date(b.start_time) - new Date(a.start_time));
     }
 
     if (filteredMatches.length === 0) {
-        container.innerHTML = `<p class="text-gray-400 font-medium text-center py-5">No ${currentScheduleView} matches.</p>`;
+        container.innerHTML = `<p class="text-gray-400 font-medium">No ${currentScheduleView} matches.</p>`;
         return;
     }
 
@@ -455,15 +461,15 @@ async function loadSchedule() {
         const timeStr = dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
         const dateStr = dateObj.toLocaleDateString([], {month: 'short', day: 'numeric'});
 
-        // Special styling for LIVE badge
+        // Live badge has pulsing animation to grab attention
         let badgeHtml = isLive 
-            ? `<span class="bg-red-500 text-white text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider animate-pulse flex items-center gap-1 shadow-sm"><i data-lucide="radio" class="w-3 h-3"></i> LIVE NOW</span>`
+            ? `<span class="bg-red-50 dark:bg-red-900/40 text-red-600 dark:text-red-400 text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider animate-pulse flex items-center gap-1"><span class="w-1.5 h-1.5 bg-red-500 rounded-full"></span> LIVE</span>`
             : `<span class="bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider">${dateStr} • ${timeStr}</span>`;
 
-        // Special border for Live cards
-        const containerClass = isLive 
-            ? "w-full bg-white dark:bg-gray-800 rounded-3xl border-2 border-red-500/50 p-5 shadow-lg relative overflow-hidden cursor-pointer active:scale-[0.98] transition-transform mb-4"
-            : "w-full bg-white dark:bg-gray-800 rounded-3xl border border-gray-100 dark:border-gray-700 p-5 shadow-sm relative overflow-hidden cursor-pointer active:scale-[0.98] transition-transform mb-3";
+        // Highlight card border if live
+        const cardClass = isLive 
+            ? "border-red-200 dark:border-red-900 shadow-md shadow-red-100 dark:shadow-none" 
+            : "border-gray-100 dark:border-gray-700 shadow-sm";
 
         let footerText = '';
         if(m.status === 'Completed') {
@@ -472,20 +478,18 @@ async function loadSchedule() {
             } else {
                 footerText = m.winner_text || `Winner: ${m.winner_id ? 'Determined' : 'TBA'}`;
             }
-        } else if(isLive) {
-             // For LIVE matches, show the score prominently in the footer area
-             footerText = isPerf ? 'Event in Progress...' : `SCORE: <span class="text-red-500 text-lg">${m.score1 || 0} - ${m.score2 || 0}</span>`;
         } else {
-            footerText = isPerf ? 'Entries Open' : 'Vs';
+            footerText = isPerf ? 'Entries Open' : `${m.score1 || 0} - ${m.score2 || 0}`;
         }
 
         return `
-        <div onclick="window.openMatchDetails('${m.id}')" class="${containerClass}">
+        <div 
+            onclick="window.openMatchDetails('${m.id}')"
+            class="w-full bg-white dark:bg-gray-800 rounded-3xl p-5 relative overflow-hidden cursor-pointer active:scale-[0.98] transition-transform ${cardClass}"
+        >
             <div class="flex justify-between items-start mb-4">
                 ${badgeHtml}
-                <span class="text-xs text-gray-500 dark:text-gray-400 font-medium uppercase flex items-center gap-1">
-                   ${m.sports.icon ? `<i data-lucide="${m.sports.icon}" class="w-3 h-3"></i>` : ''} ${m.sports.name}
-                </span>
+                <span class="text-xs text-gray-500 dark:text-gray-400 font-medium uppercase">${m.sports.name}</span>
             </div>
             
             ${isPerf ? 
@@ -1031,10 +1035,8 @@ window.showToast = function(msg, type='info') {
     
     if (type === 'error') {
         iconEl.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5 text-red-400"></i>';
-    } else if (type === 'success') {
-        iconEl.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5 text-green-400"></i>';
     } else {
-        iconEl.innerHTML = '<i data-lucide="info" class="w-5 h-5 text-blue-400"></i>';
+        iconEl.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5 text-green-400"></i>';
     }
     
     lucide.createIcons();
