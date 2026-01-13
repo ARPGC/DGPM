@@ -1,5 +1,10 @@
 // --- CONFIGURATION ---
+// 1. MAIN PROJECT (Admin Actions, Auth, Permanent Data)
 const supabaseClient = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
+
+// 2. REALTIME PROJECT (Live Scores Relay - Write Access via Service Role)
+const realtimeClient = window.supabase.createClient(CONFIG_REALTIME.url, CONFIG_REALTIME.serviceKey);
+
 let currentUser = null;
 let currentView = 'dashboard';
 let tempSchedule = []; 
@@ -73,14 +78,12 @@ window.switchView = function(viewId) {
     const titleEl = document.getElementById('page-title');
     if(titleEl) titleEl.innerText = viewId.charAt(0).toUpperCase() + viewId.slice(1);
 
-    // Export Buttons Toggle
     const globalActions = document.getElementById('global-actions');
     if(globalActions) {
         if (['users', 'teams', 'matches', 'logs', 'registrations'].includes(viewId)) globalActions.classList.remove('hidden');
         else globalActions.classList.add('hidden');
     }
 
-    // Data Loaders
     dataCache = [];
     if(viewId === 'users') loadUsersList();
     if(viewId === 'sports') loadSportsList();
@@ -116,7 +119,52 @@ window.exportCurrentPage = function(type) {
     }
 }
 
-// --- 4. DASHBOARD ---
+// --- 4. REALTIME SYNC ENGINE (CRITICAL NEW PART) ---
+async function syncToRealtime(matchId) {
+    console.log(`[SYNC] Pushing Match ${matchId} to Realtime DB...`);
+    
+    // 1. Fetch latest state from MAIN DB
+    const { data: match, error } = await supabaseClient
+        .from('matches')
+        .select('*, sports(name)')
+        .eq('id', matchId)
+        .single();
+
+    if (error || !match) {
+        console.error("Sync Error: Could not fetch from Main DB", error);
+        return;
+    }
+
+    // 2. Prepare Payload for SECONDARY DB
+    const payload = {
+        id: match.id, // Keep same ID for consistency
+        sport_name: match.sports?.name || 'Unknown',
+        team1_name: match.team1_name,
+        team2_name: match.team2_name,
+        score1: match.score1 || 0,
+        score2: match.score2 || 0,
+        round_number: match.round_number,
+        match_type: match.match_type,
+        status: match.status,
+        is_live: match.is_live,
+        location: match.location,
+        start_time: match.start_time,
+        performance_data: match.performance_data,
+        winner_text: match.winner_text,
+        winners_data: match.winners_data,
+        updated_at: new Date()
+    };
+
+    // 3. Push to REALTIME DB
+    const { error: rtError } = await realtimeClient
+        .from('live_matches')
+        .upsert(payload);
+
+    if (rtError) console.error("Sync Failed:", rtError);
+    else console.log("[SYNC] Success!");
+}
+
+// --- 5. DASHBOARD ---
 async function loadDashboardStats() {
     const { count: userCount } = await supabaseClient.from('users').select('*', { count: 'exact', head: true });
     const { count: regCount } = await supabaseClient.from('registrations').select('*', { count: 'exact', head: true });
@@ -127,7 +175,7 @@ async function loadDashboardStats() {
     document.getElementById('dash-total-teams').innerText = teamCount || 0;
 }
 
-// --- 5. SPORTS MANAGEMENT ---
+// --- 6. SPORTS MANAGEMENT ---
 async function loadSportsList() {
     const tablePerf = document.getElementById('sports-table-performance');
     const tableTourn = document.getElementById('sports-table-tournament');
@@ -212,7 +260,7 @@ window.toggleSportStatus = async function(id, currentStatus) {
     loadSportsList();
 }
 
-// --- 6. SCHEDULER ---
+// --- 7. SCHEDULER & MATCH ACTIONS ---
 
 window.handleScheduleClick = async function(sportId, sportName, isPerformance, sportType) {
     if (isPerformance) {
@@ -222,6 +270,7 @@ window.handleScheduleClick = async function(sportId, sportName, isPerformance, s
     }
 }
 
+// A. PERFORMANCE EVENTS
 async function initPerformanceEvent(sportId, sportName) {
     const { data: existing } = await supabaseClient.from('matches').select('id').eq('sport_id', sportId).neq('status', 'Completed');
     if (existing && existing.length > 0) return showToast("Event is already active!", "info");
@@ -231,12 +280,18 @@ async function initPerformanceEvent(sportId, sportName) {
 
     const participants = regs.map(r => ({ id: r.user_id, name: `${r.users.first_name} ${r.users.last_name} (${r.users.student_id})`, result: '', rank: 0 }));
 
-    const { error } = await supabaseClient.from('matches').insert({ sport_id: sportId, team1_name: sportName, team2_name: 'All Participants', status: 'Live', is_live: true, performance_data: participants });
+    const { data: newMatch, error } = await supabaseClient
+        .from('matches')
+        .insert({ sport_id: sportId, team1_name: sportName, team2_name: 'All Participants', status: 'Live', is_live: true, performance_data: participants })
+        .select()
+        .single();
 
     if (error) showToast(error.message, "error");
     else {
         showToast(`${sportName} started!`, "success");
         logAdminAction('START_EVENT', `Started Performance Event: ${sportName}`);
+        // SYNC TO REALTIME DB
+        syncToRealtime(newMatch.id);
         loadSportsList();
     }
 }
@@ -279,11 +334,14 @@ window.endPerformanceEvent = async function(matchId) {
     else {
         showToast("Event Ended! Winners Declared.", "success");
         logAdminAction('END_EVENT', `Ended Match ID ${matchId}`);
+        // SYNC TO REALTIME DB
+        syncToRealtime(matchId);
         loadMatches(currentMatchViewFilter); 
         loadSportsList(); 
     }
 }
 
+// B. TOURNAMENT ROUNDS
 async function initTournamentRound(sportId, sportName, sportType) {
     showToast("Analyzing Bracket...", "info");
     const intSportId = parseInt(sportId); 
@@ -324,7 +382,6 @@ async function initTournamentRound(sportId, sportName, sportType) {
     }
 
     tempSchedule = [];
-    
     let matchType = 'Regular';
     if (candidates.length === 2) matchType = 'Final';
     else if (candidates.length <= 4) matchType = 'Semi-Final';
@@ -358,7 +415,6 @@ function openSchedulePreviewModal(sportName, round, schedule, sportId) {
     const container = document.getElementById('schedule-preview-list');
     
     if(!titleEl || !container) {
-        console.error("DOM missing. Re-injecting modal.");
         injectScheduleModal();
         setTimeout(() => openSchedulePreviewModal(sportName, round, schedule, sportId), 100);
         return;
@@ -422,7 +478,7 @@ async function confirmSchedule(sportId) {
     }
 }
 
-// --- 7. FORCE WINNER (FIXED DUPLICATES) ---
+// --- 7. FORCE WINNER (FIX DUPLICATES & SYNC) ---
 async function openForceWinnerModal(sportId, sportName) {
     const { data: teams } = await supabaseClient.from('teams').select('id, name').eq('sport_id', sportId);
     if(!teams || teams.length === 0) return showToast("No teams found.", "error");
@@ -452,7 +508,7 @@ async function confirmForceWinner(sportId, sportName) {
     const winnersData = { gold: gName, silver: sName, bronze: bName };
     const winnerText = `Gold: ${gName}, Silver: ${sName}, Bronze: ${bName}`;
 
-    // FIX: CHECK IF FINAL ALREADY EXISTS TO PREVENT DUPLICATES
+    // DUPLICATE CHECK
     const { data: existing } = await supabaseClient
         .from('matches')
         .select('id')
@@ -460,18 +516,20 @@ async function confirmForceWinner(sportId, sportName) {
         .eq('team1_name', 'Tournament Result')
         .single();
 
-    let error;
+    let matchIdToSync;
+
     if (existing) {
-        // UPDATE EXISTING
-        const { error: updErr } = await supabaseClient.from('matches').update({
+        // UPDATE
+        const { error } = await supabaseClient.from('matches').update({
             winner_id: gId,
             winner_text: winnerText,
             winners_data: winnersData
         }).eq('id', existing.id);
-        error = updErr;
+        if(error) return showToast(error.message, "error");
+        matchIdToSync = existing.id;
     } else {
-        // INSERT NEW
-        const { error: insErr } = await supabaseClient.from('matches').insert({
+        // INSERT
+        const { data: newMatch, error } = await supabaseClient.from('matches').insert({
             sport_id: sportId,
             team1_name: "Tournament Result",
             team2_name: "Official Declaration",
@@ -483,25 +541,25 @@ async function confirmForceWinner(sportId, sportName) {
             winner_id: gId,
             winner_text: winnerText,
             winners_data: winnersData
-        });
-        error = insErr;
+        }).select().single();
+        if(error) return showToast(error.message, "error");
+        matchIdToSync = newMatch.id;
     }
 
-    if(error) showToast("Error: " + error.message, "error");
-    else {
-        showToast("Podium Updated Successfully!", "success");
-        logAdminAction('FORCE_WINNER', `Updated winners for ${sportName}`);
-        closeModal('modal-force-winner');
-    }
+    showToast("Podium Updated Successfully!", "success");
+    logAdminAction('FORCE_WINNER', `Updated winners for ${sportName}`);
+    // SYNC TO REALTIME DB
+    syncToRealtime(matchIdToSync);
+    closeModal('modal-force-winner');
 }
 
-// --- 8. REGISTRATIONS LIST (NEW VIEW) ---
+// --- 8. REGISTRATIONS LIST ---
 async function loadRegistrationsList() {
     const tbody = document.getElementById('registrations-table-body');
     if(!tbody) return;
     tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center">Loading registrations...</td></tr>';
 
-   const { data: regs, error } = await supabaseClient
+    const { data: regs, error } = await supabaseClient
         .from('registrations')
         .select(`
             id, created_at,
@@ -509,13 +567,12 @@ async function loadRegistrationsList() {
             sports (name)
         `)
         .order('created_at', { ascending: false });
-    
+
     if(error) {
         console.error(error);
         return showToast("Failed to load registrations", "error");
     }
 
-    // Flatten Data
     allRegistrationsCache = regs.map(r => ({
         name: `${r.users.first_name} ${r.users.last_name}`,
         student_id: r.users.student_id,
@@ -528,7 +585,6 @@ async function loadRegistrationsList() {
         date: new Date(r.created_at).toLocaleDateString()
     }));
 
-    // Populate Filters
     const sports = [...new Set(allRegistrationsCache.map(r => r.sport))].sort();
     const sportSelect = document.getElementById('filter-reg-sport');
     if(sportSelect && sportSelect.children.length <= 1) {
@@ -669,9 +725,18 @@ window.loadMatches = async function(statusFilter = 'Scheduled') {
 
 window.startMatch = async function(matchId) {
     if(!confirm("Start this match now? It will appear as LIVE.")) return;
-    await supabaseClient.from('matches').update({ status: 'Live', is_live: true }).eq('id', matchId);
+    
+    // 1. Update Main DB
+    const { error } = await supabaseClient.from('matches').update({ status: 'Live', is_live: true }).eq('id', matchId);
+    
+    if(error) return showToast("Failed to start match", "error");
+
     showToast("Match is now LIVE!", "success");
     logAdminAction('MATCH_START', `Started match ID ${matchId}`);
+    
+    // 2. Sync to Realtime DB
+    syncToRealtime(matchId);
+    
     loadMatches('Live');
     loadSportsList();
 }
@@ -734,7 +799,7 @@ window.resetUserPassword = async function(userId, name) {
 }
 
 window.filterUsers = function() {
-    const q = document.getElementById('user-search').value.toLowerCase();
+    const q = document.getElementById('user-search-input').value.toLowerCase();
     document.querySelectorAll('#users-table-body tr').forEach(r => {
         r.style.display = r.innerText.toLowerCase().includes(q) ? '' : 'none';
     });
