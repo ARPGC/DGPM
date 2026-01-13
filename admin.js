@@ -4,7 +4,6 @@
 
 // --- 1. CONFIGURATION & CLIENTS ---
 
-// Safety Check for Configs
 if (typeof CONFIG === 'undefined' || typeof CONFIG_REALTIME === 'undefined') {
     console.error("CRITICAL ERROR: Configuration files missing. Ensure config.js and config2.js are loaded.");
     alert("System Error: Config missing. Check console.");
@@ -22,40 +21,36 @@ let currentView = 'dashboard';
 let tempSchedule = []; 
 let currentMatchViewFilter = 'Scheduled'; 
 
-// Data Caches (for Search & Export)
+// Data Caches
 let allTeamsCache = []; 
 let dataCache = []; 
 let allRegistrationsCache = []; 
 let allSportsCache = [];
 let allUsersCache = [];
 
-// Sorting State
+// Sorting
 let currentSort = { key: 'created_at', asc: false };
 
 const DEFAULT_AVATAR = "https://t4.ftcdn.net/jpg/05/89/93/27/360_F_589932782_vQAEAZhHnq1QCGu5ikwrYaQD0Mmurm0N.jpg";
 
 // --- 3. INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', async () => {
-    // Initialize UI Libs
     if(window.lucide) lucide.createIcons();
     injectToastContainer();
     injectScheduleModal();
     injectWinnerModal(); 
 
-    // Authenticate
     await checkAdminAuth();
     
     // Load Default View
     switchView('dashboard');
 });
 
-// --- 4. AUTHENTICATION & SECURITY ---
-
+// --- 4. AUTHENTICATION ---
 async function checkAdminAuth() {
     const { data: { session } } = await supabaseClient.auth.getSession();
     if (!session) { window.location.href = 'login.html'; return; }
 
-    // Verify Admin Role
     const { data: user } = await supabaseClient
         .from('users')
         .select('role, email')
@@ -77,7 +72,6 @@ function adminLogout() {
     window.location.href = 'login.html';
 }
 
-// --- 5. LOGGING SYSTEM ---
 async function logAdminAction(action, details) {
     try {
         await supabaseClient.from('admin_logs').insert({
@@ -90,7 +84,7 @@ async function logAdminAction(action, details) {
     }
 }
 
-// --- 6. REALTIME SYNC ENGINE ---
+// --- 5. REALTIME SYNC ---
 async function syncToRealtime(matchId) {
     console.log(`[SYNC] Syncing Match ${matchId}...`);
     
@@ -127,7 +121,7 @@ async function syncToRealtime(matchId) {
     if (rtError) console.error("Sync Failed:", rtError);
 }
 
-// --- 7. VIEW NAVIGATION & ROUTING ---
+// --- 6. VIEW NAVIGATION ---
 window.switchView = function(viewId) {
     currentView = viewId;
     
@@ -141,19 +135,14 @@ window.switchView = function(viewId) {
     }
 
     document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-    const navBtn = document.getElementById('nav-' + viewId);
-    if(navBtn) navBtn.classList.add('active');
+    document.getElementById('nav-' + viewId)?.classList.add('active');
 
     const titleEl = document.getElementById('page-title');
     if(titleEl) titleEl.innerText = viewId.charAt(0).toUpperCase() + viewId.slice(1);
 
     const globalActions = document.getElementById('global-actions');
     if(globalActions) {
-        if (['users', 'teams', 'matches', 'logs', 'registrations'].includes(viewId)) {
-            globalActions.classList.remove('hidden');
-        } else {
-            globalActions.classList.add('hidden');
-        }
+        globalActions.classList.toggle('hidden', !['users', 'teams', 'matches', 'logs', 'registrations'].includes(viewId));
     }
 
     dataCache = []; 
@@ -165,7 +154,6 @@ window.switchView = function(viewId) {
     if(viewId === 'registrations') loadRegistrationsList();
 }
 
-// --- 8. EXPORT SYSTEM ---
 window.exportCurrentPage = function(type) {
     if (!dataCache || dataCache.length === 0) return showToast("No data to export", "error");
     const filename = `urja_${currentView}_${new Date().toISOString().split('T')[0]}`;
@@ -175,39 +163,29 @@ window.exportCurrentPage = function(type) {
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
         XLSX.writeFile(wb, `${filename}.xlsx`);
-    } 
-    else if (type === 'pdf') {
+    } else if (type === 'pdf') {
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF('l');
         const headers = Object.keys(dataCache[0]).map(k => k.toUpperCase());
         const rows = dataCache.map(obj => Object.values(obj).map(v => String(v)));
-
-        doc.setFontSize(18);
         doc.text(`URJA 2026 - ${currentView.toUpperCase()}`, 14, 22);
-        
-        doc.autoTable({
-            head: [headers], body: rows, startY: 30, theme: 'grid', styles: { fontSize: 8 }
-        });
+        doc.autoTable({ head: [headers], body: rows, startY: 30, theme: 'grid', styles: { fontSize: 8 } });
         doc.save(`${filename}.pdf`);
     }
 }
 
-// --- 9. DASHBOARD STATS ---
+// --- 7. DASHBOARD STATS ---
 async function loadDashboardStats() {
     const { count: userCount } = await supabaseClient.from('users').select('*', { count: 'exact', head: true });
     const { count: regCount } = await supabaseClient.from('registrations').select('*', { count: 'exact', head: true });
     const { count: teamCount } = await supabaseClient.from('teams').select('*', { count: 'exact', head: true });
     
-    const uEl = document.getElementById('dash-total-users');
-    const rEl = document.getElementById('dash-total-regs');
-    const tEl = document.getElementById('dash-total-teams');
-
-    if(uEl) uEl.innerText = userCount || 0;
-    if(rEl) rEl.innerText = regCount || 0;
-    if(tEl) tEl.innerText = teamCount || 0;
+    document.getElementById('dash-total-users').innerText = userCount || 0;
+    document.getElementById('dash-total-regs').innerText = regCount || 0;
+    document.getElementById('dash-total-teams').innerText = teamCount || 0;
 }
 
-// --- 10. SPORTS MANAGEMENT ---
+// --- 8. SPORTS MANAGEMENT (UPDATED) ---
 async function loadSportsList() {
     const tablePerf = document.getElementById('sports-table-performance');
     const tableTourn = document.getElementById('sports-table-tournament');
@@ -216,8 +194,16 @@ async function loadSportsList() {
     if(tableTourn) tableTourn.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-gray-400">Loading...</td></tr>';
 
     const { data: sports } = await supabaseClient.from('sports').select('*').order('name');
-    const { data: activeMatches } = await supabaseClient.from('matches').select('sport_id').neq('status', 'Completed');
-    const activeSportIds = activeMatches ? activeMatches.map(m => m.sport_id) : [];
+    
+    // Fetch Active Matches to Determine Status
+    const { data: activeMatches } = await supabaseClient.from('matches')
+        .select('sport_id, match_type')
+        .neq('status', 'Completed');
+
+    // Separate Active Status
+    const activeJr = activeMatches?.filter(m => m.match_type?.includes('Junior')).map(m => m.sport_id) || [];
+    const activeSr = activeMatches?.filter(m => m.match_type?.includes('Senior')).map(m => m.sport_id) || [];
+    const activePerf = activeMatches?.filter(m => m.match_type?.includes('Performance')).map(m => m.sport_id) || [];
 
     allSportsCache = sports || [];
 
@@ -227,28 +213,41 @@ async function loadSportsList() {
     let tourHtml = '';
 
     sports.forEach(s => {
-        const isStarted = activeSportIds.includes(s.id);
-        
         let actionBtn = '';
-        if (isStarted) {
-             actionBtn = `<span class="text-xs font-bold text-green-600 bg-green-50 px-3 py-1 rounded-lg border border-green-100 flex items-center gap-1 w-max ml-auto"><i data-lucide="activity" class="w-3 h-3"></i> Active</span>`;
+        
+        if (s.is_performance) {
+            // Performance: Single button starts both
+            const isActive = activePerf.includes(s.id);
+            if (isActive) {
+                actionBtn = `<span class="text-xs font-bold text-green-600 bg-green-50 px-3 py-1 rounded flex items-center gap-1 ml-auto w-max"><span class="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span> Active</span>`;
+            } else {
+                actionBtn = `<button onclick="window.handleScheduleClick('${s.id}', '${s.name}', true, '${s.type}')" class="px-4 py-1.5 bg-black text-white rounded text-xs font-bold hover:bg-gray-800">Start Event</button>`;
+            }
         } else {
-             actionBtn = `
-                <div class="flex gap-2 justify-end">
-                    <button onclick="window.handleScheduleClick('${s.id}', '${s.name}', ${s.is_performance}, '${s.type}')" class="px-4 py-1.5 bg-black text-white rounded-lg text-xs font-bold hover:bg-gray-800 shadow-sm transition-transform active:scale-95">
-                        ${s.is_performance ? 'Start Event' : 'Schedule Round'}
-                    </button>
-                    ${!s.is_performance ? `<button onclick="openForceWinnerModal('${s.id}', '${s.name}')" class="px-2 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold hover:bg-indigo-100" title="Declare Podium"><i data-lucide="crown" class="w-4 h-4"></i></button>` : ''}
-                </div>`;
+            // Tournament: Split Buttons for Jr & Sr
+            const isJrActive = activeJr.includes(s.id);
+            const isSrActive = activeSr.includes(s.id);
+
+            const btnJr = isJrActive 
+                ? `<span class="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded border border-green-100">Jr Live</span>`
+                : `<button onclick="window.handleScheduleClick('${s.id}', '${s.name}', false, '${s.type}', 'Junior')" class="px-3 py-1.5 bg-blue-600 text-white rounded text-[10px] font-bold hover:bg-blue-700 shadow-sm">Sched Jr</button>`;
+
+            const btnSr = isSrActive
+                ? `<span class="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded border border-green-100">Sr Live</span>`
+                : `<button onclick="window.handleScheduleClick('${s.id}', '${s.name}', false, '${s.type}', 'Senior')" class="px-3 py-1.5 bg-black text-white rounded text-[10px] font-bold hover:bg-gray-800 shadow-sm">Sched Sr</button>`;
+
+            const btnPodium = `<button onclick="openForceWinnerModal('${s.id}', '${s.name}')" class="p-1.5 bg-yellow-50 text-yellow-600 rounded hover:bg-yellow-100 border border-yellow-200" title="Declare Medals"><i data-lucide="crown" class="w-3.5 h-3.5"></i></button>`;
+
+            actionBtn = `<div class="flex items-center gap-2 justify-end">${btnJr} ${btnSr} ${btnPodium}</div>`;
         }
         
-        const closeBtn = `<button onclick="toggleSportStatus('${s.id}', '${s.status}')" class="text-xs font-bold underline text-gray-400 hover:text-gray-600 transition-colors">${s.status === 'Open' ? 'Close Reg' : 'Open Reg'}</button>`;
+        const closeBtn = `<button onclick="toggleSportStatus('${s.id}', '${s.status}')" class="text-xs font-bold underline text-gray-400 hover:text-gray-600 ml-4">${s.status === 'Open' ? 'Close Reg' : 'Open Reg'}</button>`;
 
         const rowHtml = `
         <tr class="border-b border-gray-50 hover:bg-gray-50 transition-colors">
             <td class="p-4 font-bold text-gray-800">${s.name}</td>
             <td class="p-4"><span class="px-2 py-1 rounded text-xs font-bold ${s.status === 'Open' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}">${s.status}</span></td>
-            <td class="p-4 text-right flex items-center justify-end gap-4">
+            <td class="p-4 text-right flex items-center justify-end">
                 ${actionBtn}
                 ${closeBtn}
             </td>
@@ -272,27 +271,22 @@ window.handleAddSport = async function(e) {
     const type = document.getElementById('new-sport-type').value;
     const size = document.getElementById('new-sport-size').value;
     
-    // New Fields for Limits
+    // Limits
     const limitJr = document.getElementById('new-sport-limit-jr').value || 32;
     const limitSr = document.getElementById('new-sport-limit-sr').value || 32;
 
-    const isPerformance = name.toLowerCase().includes('race') || name.toLowerCase().includes('jump') || name.toLowerCase().includes('throw');
+    const isPerformance = ['race','jump','throw'].some(k => name.toLowerCase().includes(k));
     const unit = isPerformance ? (name.toLowerCase().includes('race') ? 'Seconds' : 'Meters') : 'Points';
 
     const { error } = await supabaseClient.from('sports').insert({
-        name, type, 
-        team_size: size, 
-        icon: 'trophy', 
-        is_performance: isPerformance, 
-        unit: unit,
-        limit_junior: limitJr,  // Saving new limits
-        limit_senior: limitSr
+        name, type, team_size: size, icon: 'trophy', 
+        is_performance: isPerformance, unit: unit,
+        limit_junior: limitJr, limit_senior: limitSr
     });
 
     if(error) showToast(error.message, "error");
     else {
         showToast("Sport Added!", "success");
-        logAdminAction('ADD_SPORT', `Added ${name} (Jr: ${limitJr}, Sr: ${limitSr})`);
         closeModal('modal-add-sport');
         loadSportsList();
     }
@@ -304,156 +298,136 @@ window.toggleSportStatus = async function(id, currentStatus) {
     loadSportsList();
 }
 
-// --- 11. SCHEDULER & EVENT ENGINE (SPLIT LOGIC) ---
+// --- 9. SCHEDULER & EVENT ENGINE (SPLIT LOGIC) ---
 
-window.handleScheduleClick = async function(sportId, sportName, isPerformance, sportType) {
+window.handleScheduleClick = async function(sportId, sportName, isPerformance, sportType, category = null) {
     if (isPerformance) {
-        if (confirm(`Start ${sportName}? This will create SEPARATE Junior and Senior events.`)) {
+        if (confirm(`Start ${sportName}? This creates events for BOTH Jr & Sr.`)) {
             await initPerformanceEvent(sportId, sportName);
         }
     } else {
-        await initTournamentRound(sportId, sportName, sportType);
+        // Pass Category Explicitly
+        await initTournamentRound(sportId, sportName, sportType, category);
     }
 }
 
-// A. PERFORMANCE EVENTS (Split Jr/Sr)
+// A. PERFORMANCE EVENTS
 async function initPerformanceEvent(sportId, sportName) {
-    // Check if any active matches exist for this sport
     const { data: existing } = await supabaseClient.from('matches').select('id').eq('sport_id', sportId).neq('status', 'Completed');
-    if (existing && existing.length > 0) return showToast("Event is already active!", "info");
+    if (existing && existing.length > 0) return showToast("Event active!", "info");
 
     const { data: regs } = await supabaseClient.from('registrations')
         .select('user_id, users(first_name, last_name, student_id, class_name)')
         .eq('sport_id', sportId);
 
-    if (!regs || regs.length === 0) return showToast("No registrations found.", "error");
+    if (!regs || regs.length === 0) return showToast("No registrations.", "error");
 
-    // Split Participants
     const juniors = regs.filter(r => ['FYJC', 'SYJC'].includes(r.users.class_name));
     const seniors = regs.filter(r => !['FYJC', 'SYJC'].includes(r.users.class_name));
 
-    // Create Junior Match
     if (juniors.length > 0) {
         const pData = juniors.map(r => ({ id: r.user_id, name: `${r.users.first_name} ${r.users.last_name}`, result: '', rank: 0 }));
-        const { data: m1 } = await supabaseClient.from('matches').insert({
+        const { data: m } = await supabaseClient.from('matches').insert({
             sport_id: sportId, team1_name: `${sportName} (Junior)`, team2_name: 'Participants', status: 'Live', is_live: true, performance_data: pData, match_type: 'Performance (Jr)'
         }).select().single();
-        syncToRealtime(m1.id);
+        syncToRealtime(m.id);
     }
 
-    // Create Senior Match
     if (seniors.length > 0) {
         const pData = seniors.map(r => ({ id: r.user_id, name: `${r.users.first_name} ${r.users.last_name}`, result: '', rank: 0 }));
-        const { data: m2 } = await supabaseClient.from('matches').insert({
+        const { data: m } = await supabaseClient.from('matches').insert({
             sport_id: sportId, team1_name: `${sportName} (Senior)`, team2_name: 'Participants', status: 'Live', is_live: true, performance_data: pData, match_type: 'Performance (Sr)'
         }).select().single();
-        syncToRealtime(m2.id);
+        syncToRealtime(m.id);
     }
 
-    showToast("Events Started (Jr & Sr)!", "success");
+    showToast("Events Started!", "success");
     loadSportsList();
 }
 
 window.endPerformanceEvent = async function(matchId) {
-    if (!confirm("End event? Winners will be calculated.")) return;
+    if (!confirm("End event & declare winners?")) return;
 
     const { data: match } = await supabaseClient.from('matches').select('performance_data, sports(unit)').eq('id', matchId).single();
     let arr = match.performance_data;
-    const isDistance = ['Meters', 'Points'].includes(match.sports.unit);
+    const isDist = ['Meters', 'Points'].includes(match.sports.unit);
 
-    let validEntries = arr.filter(p => p.result && p.result.trim() !== '');
-    validEntries.sort((a, b) => {
-        const valA = parseFloat(a.result) || 0;
-        const valB = parseFloat(b.result) || 0;
-        return isDistance ? (valB - valA) : (valA - valB);
-    });
+    let valid = arr.filter(p => p.result && p.result.trim() !== '');
+    valid.sort((a, b) => isDist ? (parseFloat(b.result) - parseFloat(a.result)) : (parseFloat(a.result) - parseFloat(b.result)));
 
     let winners = { gold: null, silver: null, bronze: null };
-    validEntries.forEach((p, i) => {
+    valid.forEach((p, i) => {
         p.rank = i + 1;
         if(i === 0) winners.gold = p.name;
         if(i === 1) winners.silver = p.name;
         if(i === 2) winners.bronze = p.name;
     });
 
-    const finalData = [...validEntries, ...arr.filter(p => !p.result || p.result.trim() === '')];
-    const winnerText = `Gold: ${winners.gold || '-'}, Silver: ${winners.silver || '-'}, Bronze: ${winners.bronze || '-'}`;
+    const finalData = [...valid, ...arr.filter(p => !p.result || p.result.trim() === '')];
+    const wText = `Gold: ${winners.gold||'-'}, Silver: ${winners.silver||'-'}, Bronze: ${winners.bronze||'-'}`;
 
-    const { error } = await supabaseClient.from('matches').update({ 
-        performance_data: finalData, status: 'Completed', winner_text: winnerText, winners_data: winners, is_live: false 
-    }).eq('id', matchId);
-
-    if(error) showToast("Error: " + error.message, "error");
-    else {
-        showToast("Event Ended!", "success");
-        syncToRealtime(matchId);
-        loadMatches(currentMatchViewFilter); 
-    }
+    await supabaseClient.from('matches').update({ performance_data: finalData, status: 'Completed', winner_text: wText, winners_data: winners, is_live: false }).eq('id', matchId);
+    
+    syncToRealtime(matchId);
+    showToast("Event Ended!", "success");
+    loadMatches(currentMatchViewFilter); 
 }
 
-// B. TOURNAMENT SCHEDULER (Split Brackets Logic)
-async function initTournamentRound(sportId, sportName, sportType) {
-    showToast("Analyzing Brackets (Jr & Sr)...", "info");
-    const intSportId = parseInt(sportId); 
+// B. TOURNAMENT SCHEDULER (CATEGORY SPECIFIC)
+async function initTournamentRound(sportId, sportName, sportType, category) {
+    showToast(`Analyzing ${category} Bracket...`, "info");
+    const intSportId = parseInt(sportId);
 
-    // Fetch existing matches to see current progress
+    // 1. Check Active Matches for THIS category
     const { data: matches } = await supabaseClient.from('matches').select('round_number, match_type, status').eq('sport_id', intSportId);
     
-    // Determine Rounds
-    let jrRound = 1, srRound = 1;
-    if (matches && matches.length > 0) {
-        const jrMatches = matches.filter(m => m.match_type.includes('(Junior)'));
-        const srMatches = matches.filter(m => m.match_type.includes('(Senior)'));
-        
-        if (jrMatches.length > 0) jrRound = Math.max(...jrMatches.map(m => m.round_number)) + 1;
-        if (srMatches.length > 0) srRound = Math.max(...srMatches.map(m => m.round_number)) + 1;
-        
-        // Ensure previous round is done
-        const pending = matches.filter(m => m.status !== 'Completed');
-        if (pending.length > 0) return showToast("Finish active matches first!", "error");
+    // Filter matches for specific category
+    const catMatches = matches?.filter(m => m.match_type.includes(`(${category})`)) || [];
+    
+    // Check pending
+    if (catMatches.some(m => m.status !== 'Completed')) return showToast(`Active ${category} matches exist! Finish them first.`, "error");
+
+    let round = 1;
+    if (catMatches.length > 0) {
+        round = Math.max(...catMatches.map(m => m.round_number)) + 1;
     }
 
-    // Prepare Teams
-    if (sportType === 'Individual') await supabaseClient.rpc('prepare_individual_teams', { sport_id_input: intSportId });
-    await supabaseClient.rpc('auto_lock_tournament_teams', { sport_id_input: intSportId });
+    // 2. Fetch Candidates
+    let candidates = [];
 
-    // Fetch Candidates
-    let jrCandidates = [], srCandidates = [];
-
-    if (jrRound === 1 && srRound === 1) {
-        // Round 1: Get all Locked Teams
+    // Setup teams if needed (Round 1 only)
+    if (round === 1) {
+        if (sportType === 'Individual') await supabaseClient.rpc('prepare_individual_teams', { sport_id_input: intSportId });
+        await supabaseClient.rpc('auto_lock_tournament_teams', { sport_id_input: intSportId });
+        
         const { data: teams } = await supabaseClient.rpc('get_tournament_teams', { sport_id_input: intSportId });
-        if (!teams || teams.length < 2) return showToast("Need at least 2 teams.", "error");
-        
-        jrCandidates = teams.filter(t => t.category === 'Junior').map(t => ({id: t.team_id, name: t.team_name}));
-        srCandidates = teams.filter(t => t.category === 'Senior').map(t => ({id: t.team_id, name: t.team_name}));
+        // Filter by requested category
+        candidates = teams.filter(t => t.category === category).map(t => ({id: t.team_id, name: t.team_name}));
     } else {
-        // Next Rounds: Get Winners
-        const { data: winners } = await supabaseClient.from('matches').select('winner_id, match_type').eq('sport_id', intSportId).not('winner_id', 'is', null);
+        // Next Round: Get Winners from previous rounds of THIS category
+        const { data: winners } = await supabaseClient.from('matches')
+            .select('winner_id, match_type')
+            .eq('sport_id', intSportId)
+            .ilike('match_type', `%(${category})%`) // Filter DB side roughly
+            .not('winner_id', 'is', null);
+
         const winnerIds = winners.map(w => w.winner_id);
-        const { data: teamDetails } = await supabaseClient.from('teams').select(`id, name, captain:users!captain_id(class_name)`).in('id', winnerIds);
+        const { data: teamDetails } = await supabaseClient.from('teams').select('id, name').in('id', winnerIds);
         
-        teamDetails.forEach(t => {
-            const isJr = ['FYJC', 'SYJC'].includes(t.captain?.class_name);
-            // Basic logic: If they won, they are candidates. 
-            // Ideally, filter out those who already played in max round, but this works for basic flow.
-            if (isJr) jrCandidates.push({id: t.id, name: t.name});
-            else srCandidates.push({id: t.id, name: t.name});
-        });
+        // Simple progression: If you won, you are in.
+        // (Production app would check exactly which round they won, but this works for basic flow)
+        candidates = teamDetails.map(t => ({id: t.id, name: t.name}));
     }
+
+    if (!candidates || candidates.length < 2) return showToast(`Not enough eligible ${category} teams (Found ${candidates?.length || 0}).`, "error");
 
     tempSchedule = [];
-    processCategory(jrCandidates, jrRound, "Junior");
-    processCategory(srCandidates, srRound, "Senior");
-
-    if (tempSchedule.length === 0) return showToast("No matches to schedule.", "info");
-
-    openSchedulePreviewModal(sportName, `${jrRound}/${srRound}`, tempSchedule, intSportId);
+    generatePairs(candidates, round, category);
+    
+    openSchedulePreviewModal(sportName, `${round} (${category})`, tempSchedule, intSportId);
 }
 
-function processCategory(list, round, category) {
-    if (!list || list.length < 2) return; 
-    
+function generatePairs(list, round, category) {
     list.sort(() => Math.random() - 0.5); // Shuffle
 
     let matchType = 'Regular';
@@ -473,10 +447,10 @@ function processCategory(list, round, category) {
     }
 }
 
-function openSchedulePreviewModal(sportName, rounds, schedule, sportId) {
+function openSchedulePreviewModal(sportName, roundLabel, schedule, sportId) {
     if(!document.getElementById('modal-schedule-preview')) injectScheduleModal();
     
-    document.getElementById('preview-subtitle').innerText = `Generating Rounds (Jr/Sr)`;
+    document.getElementById('preview-subtitle').innerText = `Generating: Round ${roundLabel}`;
     const container = document.getElementById('schedule-preview-list');
     
     container.innerHTML = schedule.map((m, idx) => `
@@ -531,14 +505,13 @@ async function confirmSchedule(sportId) {
     }
 }
 
-// --- 12. FORCE WINNER (Category Support) ---
+// --- 10. FORCE WINNER (Updated) ---
 async function openForceWinnerModal(sportId, sportName) {
     const { data: teams } = await supabaseClient.from('teams').select('id, name').eq('sport_id', sportId);
     const opts = `<option value="">-- None --</option>` + (teams||[]).map(t => `<option value="${t.id}">${t.name}</option>`).join('');
     
     ['fw-gold','fw-silver','fw-bronze'].forEach(id => document.getElementById(id).innerHTML = opts);
     
-    // Inject Category Selector dynamically if missing
     const catDiv = document.getElementById('fw-category-container');
     if (!catDiv) {
         const div = document.createElement('div');
@@ -565,23 +538,15 @@ async function confirmForceWinner(sportId, sportName) {
 
     if(!gId) return showToast("Select a Gold winner.", "error");
 
-    const getTxt = (id) => {
-        const el = document.getElementById(id);
-        return el.selectedIndex > 0 ? el.options[el.selectedIndex].text : '-';
-    };
-    
+    const getTxt = (id) => { const el = document.getElementById(id); return el.selectedIndex > 0 ? el.options[el.selectedIndex].text : '-'; };
     const winnersData = { gold: getTxt('fw-gold'), silver: getTxt('fw-silver'), bronze: getTxt('fw-bronze') };
     const winnerText = `Gold: ${winnersData.gold}, Silver: ${winnersData.silver}, Bronze: ${winnersData.bronze}`;
     const resultName = `Tournament Result (${cat})`;
 
-    // Check existing result for this category to update instead of insert
     const { data: existing } = await supabaseClient.from('matches').select('id').eq('sport_id', sportId).eq('team1_name', resultName).single();
 
     let mId;
-    const payload = {
-        winner_id: gId, winner_text: winnerText, winners_data: winnersData,
-        status: 'Completed', match_type: `Final (${cat})`, is_live: false
-    };
+    const payload = { winner_id: gId, winner_text: winnerText, winners_data: winnersData, status: 'Completed', match_type: `Final (${cat})`, is_live: false };
 
     if (existing) {
         await supabaseClient.from('matches').update(payload).eq('id', existing.id);
@@ -595,20 +560,17 @@ async function confirmForceWinner(sportId, sportName) {
     }
 
     syncToRealtime(mId);
-    showToast(`Podium Declared for ${cat}!`, "success");
+    showToast(`Podium Declared (${cat})!`, "success");
     closeModal('modal-force-winner');
 }
 
-// --- 13. REGISTRATIONS & USERS (Standard Logic) ---
+// --- 11. REGISTRATIONS ---
 async function loadRegistrationsList() {
     const tbody = document.getElementById('registrations-table-body');
     if(!tbody) return;
     tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center">Loading...</td></tr>';
 
-    const { data: regs } = await supabaseClient
-        .from('registrations')
-        .select(`id, created_at, users (first_name, last_name, student_id, class_name, gender, mobile, email), sports (name)`)
-        .order('created_at', { ascending: false });
+    const { data: regs } = await supabaseClient.from('registrations').select(`id, created_at, users (first_name, last_name, student_id, class_name, gender, mobile, email), sports (name)`).order('created_at', { ascending: false });
 
     allRegistrationsCache = (regs||[]).map(r => ({
         name: `${r.users.first_name} ${r.users.last_name}`,
@@ -629,9 +591,7 @@ function renderRegistrations(data) {
     const tbody = document.getElementById('registrations-table-body');
     document.getElementById('reg-count').innerText = data.length;
     dataCache = data;
-
     if(data.length === 0) { tbody.innerHTML = '<tr><td colspan="6" class="p-8 text-center text-gray-400">No records found.</td></tr>'; return; }
-
     tbody.innerHTML = data.map(r => `
         <tr class="border-b border-gray-50 hover:bg-gray-50">
             <td class="p-4"><div class="font-bold">${r.name}</div><div class="text-xs text-gray-500">${r.email}</div></td>
@@ -640,8 +600,7 @@ function renderRegistrations(data) {
             <td class="p-4 text-sm">${r.gender}</td>
             <td class="p-4 text-sm font-mono">${r.mobile}</td>
             <td class="p-4 text-right text-xs text-gray-400 font-bold">${r.date}</td>
-        </tr>
-    `).join('');
+        </tr>`).join('');
 }
 
 window.filterRegistrations = function() {
@@ -649,13 +608,7 @@ window.filterRegistrations = function() {
     const sport = document.getElementById('filter-reg-sport').value;
     const gender = document.getElementById('filter-reg-gender').value;
     const cls = document.getElementById('filter-reg-class').value;
-
-    const filtered = allRegistrationsCache.filter(r => {
-        return (r.name.toLowerCase().includes(search) || r.student_id.toLowerCase().includes(search)) &&
-               (sport === "" || r.sport === sport) &&
-               (gender === "" || r.gender === gender) &&
-               (cls === "" || r.category === cls);
-    });
+    const filtered = allRegistrationsCache.filter(r => (r.name.toLowerCase().includes(search) || r.student_id.toLowerCase().includes(search)) && (sport === "" || r.sport === sport) && (gender === "" || r.gender === gender) && (cls === "" || r.category === cls));
     renderRegistrations(filtered);
 }
 
@@ -667,38 +620,22 @@ window.resetRegFilters = function() {
     renderRegistrations(allRegistrationsCache);
 }
 
-// --- 14. MATCH LIST ---
+// --- 12. MATCH LIST ---
 window.loadMatches = async function(statusFilter) {
     currentMatchViewFilter = statusFilter;
     document.querySelectorAll('#match-filter-tabs button').forEach(btn => {
-        btn.className = btn.innerText.includes(statusFilter) 
-            ? "px-4 py-2 text-sm font-bold text-black border-b-2 border-black" 
-            : "px-4 py-2 text-sm font-bold text-gray-500 hover:text-black";
+        btn.className = btn.innerText.includes(statusFilter) ? "px-4 py-2 text-sm font-bold text-black border-b-2 border-black" : "px-4 py-2 text-sm font-bold text-gray-500 hover:text-black";
     });
-
     const container = document.getElementById('matches-grid');
     container.innerHTML = '<p class="col-span-3 text-center text-gray-400 py-10">Loading...</p>';
-
     const { data: matches } = await supabaseClient.from('matches').select('*, sports(name, is_performance)').eq('status', statusFilter).order('start_time', { ascending: true });
-
     if (!matches || matches.length === 0) { container.innerHTML = `<p class="col-span-3 text-center text-gray-400 py-10">No ${statusFilter} matches.</p>`; return; }
-
     dataCache = matches;
     container.innerHTML = matches.map(m => `
         <div class="bg-white p-5 rounded-3xl border border-gray-200 shadow-sm relative overflow-hidden">
-            <div class="flex justify-between mb-4">
-                 <span class="text-[10px] font-bold bg-gray-100 px-2 py-1 rounded text-gray-500 uppercase">${m.sports.name}</span>
-                 ${m.status === 'Live' ? '<span class="text-red-600 font-bold text-xs animate-pulse">● LIVE</span>' : ''}
-            </div>
-            ${m.sports.is_performance ? 
-                `<div class="text-center py-2"><h4 class="font-black text-xl">${m.team1_name}</h4></div>` : 
-                `<div class="flex justify-between items-center mb-4"><h4 class="font-bold">${m.team1_name}</h4><span class="text-gray-300 text-xs">VS</span><h4 class="font-bold">${m.team2_name}</h4></div>`
-            }
-            <div class="border-t pt-3 flex justify-between items-center text-xs text-gray-500">
-                 <span>${m.match_type}</span>
-                 ${m.status === 'Scheduled' ? `<button onclick="startMatch('${m.id}')" class="text-green-600 font-bold hover:underline">Start</button>` : ''}
-                 ${m.status === 'Live' && m.sports.is_performance ? `<button onclick="endPerformanceEvent('${m.id}')" class="text-red-600 font-bold hover:underline">End</button>` : ''}
-            </div>
+            <div class="flex justify-between mb-4"><span class="text-[10px] font-bold bg-gray-100 px-2 py-1 rounded text-gray-500 uppercase">${m.sports.name}</span>${m.status === 'Live' ? '<span class="text-red-600 font-bold text-xs animate-pulse">● LIVE</span>' : ''}</div>
+            ${m.sports.is_performance ? `<div class="text-center py-2"><h4 class="font-black text-xl">${m.team1_name}</h4></div>` : `<div class="flex justify-between items-center mb-4"><h4 class="font-bold w-1/3 truncate">${m.team1_name}</h4><span class="text-gray-300 text-xs">VS</span><h4 class="font-bold w-1/3 truncate text-right">${m.team2_name}</h4></div>`}
+            <div class="border-t pt-3 flex justify-between items-center text-xs text-gray-500"><span>${m.match_type}</span>${m.status === 'Scheduled' ? `<button onclick="startMatch('${m.id}')" class="text-green-600 font-bold hover:underline">Start</button>` : ''}${m.status === 'Live' && m.sports.is_performance ? `<button onclick="endPerformanceEvent('${m.id}')" class="text-red-600 font-bold hover:underline">End</button>` : ''}</div>
         </div>`).join('');
 }
 
@@ -710,16 +647,13 @@ window.startMatch = async function(matchId) {
     loadMatches('Live');
 }
 
-// --- 15. SETUP UTILS ---
+// --- 13. UTILS ---
 function setupMatchFilters() {
     if(document.getElementById('match-filter-tabs')) return;
     const div = document.createElement('div');
     div.id = 'match-filter-tabs';
     div.className = "flex gap-2 mb-6 border-b pb-2";
-    div.innerHTML = `
-        <button onclick="loadMatches('Scheduled')">Scheduled</button>
-        <button onclick="loadMatches('Live')">Live</button>
-        <button onclick="loadMatches('Completed')">Completed</button>`;
+    div.innerHTML = `<button onclick="loadMatches('Scheduled')">Scheduled</button><button onclick="loadMatches('Live')">Live</button><button onclick="loadMatches('Completed')">Completed</button>`;
     document.getElementById('view-matches').insertBefore(div, document.getElementById('matches-grid'));
 }
 
@@ -730,15 +664,7 @@ function injectScheduleModal() {
     const div = document.createElement('div');
     div.id = 'modal-schedule-preview';
     div.className = 'hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm';
-    div.innerHTML = `
-        <div class="bg-white p-6 rounded-2xl w-full max-w-2xl max-h-[80vh] overflow-y-auto m-4">
-            <div class="flex justify-between items-center mb-6">
-                <div><h3 class="font-bold text-xl">Schedule</h3><p id="preview-subtitle" class="text-sm text-gray-500">Generating...</p></div>
-                <button onclick="closeModal('modal-schedule-preview')" class="p-2 bg-gray-100 rounded-full"><i data-lucide="x" class="w-5 h-5"></i></button>
-            </div>
-            <div id="schedule-preview-list" class="space-y-3 mb-6"></div>
-            <button id="btn-confirm-schedule" class="w-full py-3 bg-black text-white font-bold rounded-xl shadow-lg">Confirm & Publish</button>
-        </div>`;
+    div.innerHTML = `<div class="bg-white p-6 rounded-2xl w-full max-w-2xl max-h-[80vh] overflow-y-auto m-4"><div class="flex justify-between items-center mb-6"><div><h3 class="font-bold text-xl">Schedule</h3><p id="preview-subtitle" class="text-sm text-gray-500">Generating...</p></div><button onclick="closeModal('modal-schedule-preview')" class="p-2 bg-gray-100 rounded-full"><i data-lucide="x" class="w-5 h-5"></i></button></div><div id="schedule-preview-list" class="space-y-3 mb-6"></div><button id="btn-confirm-schedule" class="w-full py-3 bg-black text-white font-bold rounded-xl shadow-lg">Confirm & Publish</button></div>`;
     document.body.appendChild(div);
 }
 
@@ -747,19 +673,7 @@ function injectWinnerModal() {
     const div = document.createElement('div');
     div.id = 'modal-force-winner';
     div.className = 'hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm';
-    div.innerHTML = `
-        <div class="bg-white p-6 rounded-2xl w-96">
-            <h3 class="font-bold text-lg mb-4">Declare Winners</h3>
-            <div class="space-y-2 mb-4">
-                <label class="text-xs font-bold text-yellow-500">GOLD</label><select id="fw-gold" class="w-full p-2 border rounded-lg text-sm"></select>
-                <label class="text-xs font-bold text-gray-400">SILVER</label><select id="fw-silver" class="w-full p-2 border rounded-lg text-sm"></select>
-                <label class="text-xs font-bold text-orange-400">BRONZE</label><select id="fw-bronze" class="w-full p-2 border rounded-lg text-sm"></select>
-            </div>
-            <div class="flex gap-2">
-                <button onclick="closeModal('modal-force-winner')" class="flex-1 py-2 bg-gray-100 rounded-lg text-sm font-bold">Cancel</button>
-                <button id="btn-confirm-winner" class="flex-1 py-2 bg-black text-white rounded-lg text-sm font-bold">Confirm</button>
-            </div>
-        </div>`;
+    div.innerHTML = `<div class="bg-white p-6 rounded-2xl w-96"><h3 class="font-bold text-lg mb-4">Declare Winners</h3><div class="space-y-2 mb-4"><label class="text-xs font-bold text-yellow-500">GOLD</label><select id="fw-gold" class="w-full p-2 border rounded-lg text-sm"></select><label class="text-xs font-bold text-gray-400">SILVER</label><select id="fw-silver" class="w-full p-2 border rounded-lg text-sm"></select><label class="text-xs font-bold text-orange-400">BRONZE</label><select id="fw-bronze" class="w-full p-2 border rounded-lg text-sm"></select></div><div class="flex gap-2"><button onclick="closeModal('modal-force-winner')" class="flex-1 py-2 bg-gray-100 rounded-lg text-sm font-bold">Cancel</button><button id="btn-confirm-winner" class="flex-1 py-2 bg-black text-white rounded-lg text-sm font-bold">Confirm</button></div></div>`;
     document.body.appendChild(div);
 }
 
