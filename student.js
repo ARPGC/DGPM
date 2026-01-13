@@ -1,24 +1,46 @@
-// --- CONFIGURATION ---
+// ==========================================
+// URJA 2026 - STUDENT PORTAL CONTROLLER
+// ==========================================
+
+// --- CONFIGURATION & CLIENTS ---
+
+// Safety Check
+if (typeof CONFIG === 'undefined' || typeof CONFIG_REALTIME === 'undefined') {
+    console.error("CRITICAL: Config missing. Ensure config.js and config2.js are loaded.");
+}
+
+// 1. MAIN PROJECT (Auth, Teams, Registrations - Write Access)
 const supabaseClient = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
+
+// 2. REALTIME PROJECT (Live Scores & Results - Read Only)
+const realtimeClient = window.supabase.createClient(CONFIG_REALTIME.url, CONFIG_REALTIME.anonKey);
+
+// --- STATE MANAGEMENT ---
 let currentUser = null;
 let myRegistrations = []; 
 let currentScheduleView = 'upcoming'; 
 let allSportsList = [];
+let liveSubscription = null;
 
 const DEFAULT_TEAM_SIZE = 5;
-const TOURNAMENT_CAP = 64; // Max locked teams allowed per sport
+const TOURNAMENT_CAP = 64; 
 const DEFAULT_AVATAR = "https://t4.ftcdn.net/jpg/05/89/93/27/360_F_589932782_vQAEAZhHnq1QCGu5ikwrYaQD0Mmurm0N.jpg";
 
 // --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', async () => {
-    lucide.createIcons();
+    if(window.lucide) lucide.createIcons();
     initTheme();
+    injectToastContainer();
     setupImageUpload(); 
-    await checkAuth();
-    
     setupTabSystem();
     setupConfirmModal(); 
     
+    await checkAuth();
+    
+    // Start Realtime Listener
+    setupRealtimeSubscription();
+    
+    // Default Tab
     window.switchTab('dashboard');
 });
 
@@ -48,7 +70,7 @@ function updateThemeIcon(isDark) {
         btn.innerHTML = isDark 
             ? '<i data-lucide="sun" class="w-5 h-5 text-yellow-400"></i>' 
             : '<i data-lucide="moon" class="w-5 h-5 text-gray-600 dark:text-gray-300"></i>';
-        lucide.createIcons();
+        if(window.lucide) lucide.createIcons();
     }
 }
 
@@ -139,7 +161,6 @@ async function fetchMyRegistrations() {
     }
 }
 
-// --- DASHBOARD STATS ---
 async function loadUserStats() {
     const { count: matches } = await supabaseClient.from('registrations')
         .select('*', { count: 'exact', head: true }).eq('user_id', currentUser.id);
@@ -197,7 +218,7 @@ function setupTabSystem() {
             activeNav.classList.remove('text-gray-400', 'dark:text-gray-500');
         }
 
-        if(tabId === 'dashboard') loadLatestChampions();
+        if(tabId === 'dashboard') loadDashboard(); // UPDATED: Calls the new dashboard loader
         if(tabId === 'register') window.toggleRegisterView('new');
         if(tabId === 'teams') window.toggleTeamView('marketplace');
         if(tabId === 'schedule') window.filterSchedule('upcoming');
@@ -205,23 +226,115 @@ function setupTabSystem() {
     }
 }
 
-// --- 4. DASHBOARD CHAMPIONS ---
-async function loadLatestChampions() {
-    let container = document.getElementById('home-champions-list');
-    if (!container) return;
+// --- 4. DASHBOARD (REALTIME + MAIN DB) ---
+async function loadDashboard() {
+    // 1. Live Matches (Realtime DB - High Priority)
+    loadLiveMatches();
+    
+    // 2. Upcoming Matches (Main DB - Safe Fallback)
+    loadUpcomingDashboard();
+    
+    // 3. Champions (Realtime DB - 3 Winners)
+    loadLatestChampions();
+}
 
-    container.innerHTML = '<div class="animate-pulse h-20 bg-gray-200 dark:bg-gray-800 rounded-xl"></div>';
+// A. LIVE MATCHES
+async function loadLiveMatches() {
+    const container = document.getElementById('live-matches-container');
+    const list = document.getElementById('live-matches-list');
+    
+    if(!container || !list) return;
+
+    const { data: matches } = await realtimeClient
+        .from('live_matches')
+        .select('*')
+        .eq('status', 'Live')
+        .order('updated_at', { ascending: false });
+
+    if (!matches || matches.length === 0) {
+        container.classList.add('hidden'); 
+        return;
+    }
+
+    container.classList.remove('hidden');
+    
+    list.innerHTML = matches.map(m => `
+        <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-red-100 dark:border-red-900/30 shadow-lg shadow-red-50/50 relative overflow-hidden mb-4 animate-fade-in">
+            <div class="absolute top-0 right-0 bg-red-600 text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl animate-pulse flex items-center gap-1">
+                <span class="w-1.5 h-1.5 bg-white rounded-full"></span> LIVE
+            </div>
+            <div class="text-[10px] font-bold text-red-500 uppercase tracking-widest mb-2">${m.sport_name}</div>
+            
+            <div class="flex items-center justify-between gap-2">
+                <div class="text-left w-5/12">
+                    <h3 class="font-black text-lg text-gray-900 dark:text-white leading-tight truncate">${m.team1_name}</h3>
+                    <p class="text-3xl font-black text-gray-900 dark:text-white mt-1">${m.score1 || 0}</p>
+                </div>
+                <div class="text-center w-2/12"><div class="text-[10px] font-bold text-gray-300 bg-gray-50 dark:bg-gray-700 rounded-full w-8 h-8 flex items-center justify-center mx-auto">VS</div></div>
+                <div class="text-right w-5/12">
+                    <h3 class="font-black text-lg text-gray-900 dark:text-white leading-tight truncate">${m.team2_name}</h3>
+                    <p class="text-3xl font-black text-gray-900 dark:text-white mt-1">${m.score2 || 0}</p>
+                </div>
+            </div>
+            <div class="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700 flex justify-between items-center text-xs text-gray-400 font-bold">
+                <span class="flex items-center gap-1"><i data-lucide="map-pin" class="w-3 h-3"></i> ${m.location || 'Ground'}</span>
+                <span>Round ${m.round_number || 1}</span>
+            </div>
+        </div>
+    `).join('');
+    if(window.lucide) lucide.createIcons();
+}
+
+// B. UPCOMING (MAIN DB)
+async function loadUpcomingDashboard() {
+    const list = document.getElementById('upcoming-matches-list');
+    if(!list) return;
 
     const { data: matches } = await supabaseClient
         .from('matches')
         .select('*, sports(name)')
-        .eq('status', 'Completed')
-        .not('winners_data', 'is', null) 
-        .order('created_at', { ascending: false })
+        .eq('status', 'Scheduled')
+        .order('start_time', { ascending: true })
         .limit(3);
 
     if(!matches || matches.length === 0) {
-        container.innerHTML = '<p class="text-xs text-gray-400 italic">No results declared yet.</p>';
+        list.innerHTML = '<p class="text-xs text-gray-400 italic text-center py-4">No upcoming matches.</p>';
+        return;
+    }
+
+    list.innerHTML = matches.map(m => `
+        <div class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between mb-2">
+            <div>
+                <div class="text-[10px] font-bold text-brand-primary uppercase tracking-wide">${m.sports.name}</div>
+                <div class="font-bold text-gray-900 dark:text-white text-sm mt-0.5">${m.team1_name} vs ${m.team2_name}</div>
+                <div class="text-xs text-gray-400 mt-1 flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> ${new Date(m.start_time).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
+            </div>
+            <div class="bg-gray-50 dark:bg-gray-700 px-3 py-2 rounded-lg text-center">
+                <div class="text-[10px] font-bold text-gray-400 uppercase">${new Date(m.start_time).toLocaleString('default', { month: 'short' })}</div>
+                <div class="text-lg font-black text-gray-900 dark:text-white leading-none">${new Date(m.start_time).getDate()}</div>
+            </div>
+        </div>
+    `).join('');
+    if(window.lucide) lucide.createIcons();
+}
+
+// C. CHAMPIONS (REALTIME DB)
+async function loadLatestChampions() {
+    let container = document.getElementById('home-champions-list'); // Ensure this ID exists in HTML
+    // Fallback if user uses old HTML ID
+    if (!container) container = document.getElementById('champions-list'); 
+    if (!container) return;
+
+    const { data: matches } = await realtimeClient
+        .from('live_matches')
+        .select('*')
+        .eq('status', 'Completed')
+        .not('winners_data', 'is', null) 
+        .order('updated_at', { ascending: false })
+        .limit(5);
+
+    if(!matches || matches.length === 0) {
+        container.innerHTML = '<p class="text-xs text-gray-400 italic text-center py-4">No results declared yet.</p>';
         return;
     }
 
@@ -229,16 +342,42 @@ async function loadLatestChampions() {
         const w = m.winners_data || {};
         return `
         <div class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm relative overflow-hidden mb-3">
-            <h4 class="font-black text-gray-900 dark:text-white uppercase mb-2 text-sm">${m.sports.name}</h4>
+            <div class="flex justify-between items-center mb-2 border-b border-gray-50 dark:border-gray-700 pb-2">
+                <span class="text-xs font-black text-gray-400 uppercase tracking-widest">${m.sport_name}</span>
+                <span class="text-[9px] bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-2 py-0.5 rounded font-bold">Finished</span>
+            </div>
             <div class="space-y-1">
-                ${w.gold ? `<div class="flex items-center gap-2 text-xs font-bold"><span class="text-yellow-500">🥇</span> <span class="text-gray-800 dark:text-gray-200">${w.gold}</span></div>` : ''}
-                ${w.silver ? `<div class="flex items-center gap-2 text-xs font-bold"><span class="text-gray-400">🥈</span> <span class="text-gray-600 dark:text-gray-400">${w.silver}</span></div>` : ''}
+                ${w.gold ? `<div class="flex items-center gap-2 text-xs font-bold"><span class="text-lg">🥇</span> <span class="text-gray-800 dark:text-gray-200">${w.gold}</span></div>` : ''}
+                ${w.silver ? `<div class="flex items-center gap-2 text-xs font-bold"><span class="text-lg">🥈</span> <span class="text-gray-600 dark:text-gray-400">${w.silver}</span></div>` : ''}
+                ${w.bronze ? `<div class="flex items-center gap-2 text-xs font-bold"><span class="text-lg">🥉</span> <span class="text-gray-500 dark:text-gray-500">${w.bronze}</span></div>` : ''}
             </div>
         </div>
     `}).join('');
 }
 
-// --- 5. SCHEDULE MODULE ---
+// --- 5. REALTIME SUBSCRIPTION ---
+function setupRealtimeSubscription() {
+    if (liveSubscription) return; 
+
+    liveSubscription = realtimeClient
+        .channel('public:live_matches')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'live_matches' }, (payload) => {
+            const newData = payload.new;
+            if (!newData) return;
+
+            if (newData.status === 'Live') {
+                loadLiveMatches();
+                showToast(`Update: ${newData.sport_name} score changed!`);
+            } else if (newData.status === 'Completed') {
+                loadLiveMatches();
+                loadLatestChampions();
+                showToast(`Result: ${newData.sport_name} finished!`);
+            }
+        })
+        .subscribe();
+}
+
+// --- 6. SCHEDULE MODULE (Existing) ---
 window.filterSchedule = function(view) {
     currentScheduleView = view;
     
@@ -351,7 +490,6 @@ async function loadSchedule() {
     lucide.createIcons();
 }
 
-// --- 6. MATCH DETAILS MODAL (STRICT SORT) ---
 window.openMatchDetails = async function(matchId) {
     const { data: match } = await supabaseClient.from('matches').select('*, sports(name, is_performance, unit)').eq('id', matchId).single();
     if(!match) return;
@@ -386,7 +524,6 @@ window.openMatchDetails = async function(matchId) {
         if (!results || results.length === 0) {
             tbody.innerHTML = '<tr><td colspan="3" class="px-4 py-8 text-center text-gray-400 italic">No results available yet.</td></tr>';
         } else {
-            // STRICT SORT
             results.sort((a, b) => {
                 if (a.rank && b.rank) return a.rank - b.rank;
                 const valA = parseFloat(a.result) || 999999;
@@ -396,10 +533,7 @@ window.openMatchDetails = async function(matchId) {
 
             tbody.innerHTML = results.map((r, index) => {
                 let displayRank = r.rank || (index + 1);
-                let rankIcon = displayRank;
-                if(displayRank === 1) rankIcon = '🥇';
-                if(displayRank === 2) rankIcon = '🥈';
-                if(displayRank === 3) rankIcon = '🥉';
+                let rankIcon = displayRank === 1 ? '🥇' : displayRank === 2 ? '🥈' : displayRank === 3 ? '🥉' : displayRank;
 
                 return `
                 <tr class="bg-white dark:bg-gray-800 border-b dark:border-gray-700">
@@ -414,7 +548,6 @@ window.openMatchDetails = async function(matchId) {
     document.getElementById('modal-match-details').classList.remove('hidden');
 }
 
-// Helper: Load Squad List
 async function loadSquadList(teamId, containerId) {
     const container = document.getElementById(containerId);
     container.innerHTML = '<p class="text-[10px] text-gray-400 italic">Loading...</p>';
@@ -442,12 +575,11 @@ async function loadSquadList(teamId, containerId) {
     `).join('');
 }
 
-// --- 7. TEAMS MODULE (STRICT LIMITS + FULL SQUAD + LEAVE) ---
+// --- 7. TEAMS MODULE (Existing) ---
 window.toggleTeamView = function(view) {
     document.getElementById('team-marketplace').classList.add('hidden');
     document.getElementById('team-locker').classList.add('hidden');
     
-    // Toggle styles manually to preserve custom design
     const btnMarket = document.getElementById('btn-team-market');
     const btnLocker = document.getElementById('btn-team-locker');
     
@@ -498,21 +630,14 @@ window.loadTeamMarketplace = async function() {
          return;
     }
 
-    // Filter: Show only teams matching Gender AND Class Category (Jr vs Sr)
-    // EXCEPTION: eSports (BGMI/Free Fire) allows mixed classes and genders
     const validTeams = teams.filter(t => {
         const isEsports = ['BGMI', 'FREE FIRE'].includes(t.sports.name);
-        
-        // Gender Check
         if (!isEsports && t.captain?.gender !== currentUser.gender) return false;
-
-        // Class Check (Jr vs Sr)
         if (!isEsports) {
             const myCategory = (['FYJC', 'SYJC'].includes(currentUser.class_name)) ? 'Junior' : 'Senior';
             const teamCategory = (['FYJC', 'SYJC'].includes(t.captain.class_name)) ? 'Junior' : 'Senior';
             if (myCategory !== teamCategory) return false;
         }
-        
         return true;
     });
 
@@ -553,7 +678,6 @@ window.loadTeamMarketplace = async function() {
     `}).join('');
 }
 
-// Check Eligibility Helper
 function checkGenderEligibility(sportName, sportType) {
     if (sportType === 'Team') {
         const allowedFemales = ['Relay Race', 'BGMI', 'FREE FIRE'];
@@ -567,7 +691,6 @@ function checkGenderEligibility(sportName, sportType) {
 window.viewSquadAndJoin = async function(teamId, sportName, seatsLeft, sportType) {
     if(seatsLeft <= 0) return showToast("❌ This team is full!", "error");
 
-    // Gender Block Logic
     if (!checkGenderEligibility(sportName, sportType)) {
         return showToast("⚠️ Females allowed only in Relay & eSports.", "error");
     }
@@ -626,7 +749,6 @@ window.loadTeamLocker = async function() {
         const isCaptain = t.captain_id === currentUser.id;
         const isLocked = t.status === 'Locked';
         
-        // Fetch Squad
         const { data: squad } = await supabaseClient
             .from('team_members')
             .select('users(first_name)')
@@ -635,7 +757,6 @@ window.loadTeamLocker = async function() {
             
         const squadHtml = squad.map(s => `<span class="text-[10px] bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded inline-block mr-1 mb-1 border border-gray-200 dark:border-gray-600">${s.users.first_name}</span>`).join('');
 
-        // TOURNAMENT FULL CHECK
         let disableLock = false;
         if (!isLocked && isCaptain) {
             const { count: lockedCount } = await supabaseClient.from('teams')
@@ -688,8 +809,7 @@ window.leaveTeam = function(memberId, teamName) {
     });
 }
 
-// --- 8. REGISTRATION MODULE (WITH WITHDRAW) ---
-
+// --- 8. REGISTRATION MODULE ---
 window.toggleRegisterView = function(view) {
     document.getElementById('reg-section-new').classList.add('hidden');
     document.getElementById('reg-section-history').classList.add('hidden');
@@ -801,7 +921,6 @@ window.loadProfileGames = function() {
 window.withdrawRegistration = async function(regId, sportId, sportType, sportName) {
     showConfirmDialog("Withdraw?", `Withdraw from ${sportName}?`, async () => {
         
-        // If Team Sport, check locks first
         if (sportType === 'Team') {
             const { data: membership } = await supabaseClient.from('team_members')
                 .select('id, teams!inner(status)')
@@ -814,7 +933,6 @@ window.withdrawRegistration = async function(regId, sportId, sportType, sportNam
                     window.closeModal('modal-confirm');
                     return showToast("Cannot withdraw! Team is LOCKED.", "error");
                 }
-                // Delete membership first
                 await supabaseClient.from('team_members').delete().eq('id', membership.id);
             }
         }
@@ -825,7 +943,6 @@ window.withdrawRegistration = async function(regId, sportId, sportType, sportNam
             showToast(error.message, "error");
         } else {
             showToast("Withdrawn Successfully", "success");
-            // Refresh
             myRegistrations = myRegistrations.filter(id => id != sportId);
             window.loadRegistrationHistory('history-list'); 
             window.loadRegistrationHistory('my-registrations-list');
@@ -881,7 +998,6 @@ window.showToast = function(msg, type='info') {
     const t = document.getElementById('toast-container');
     const msgEl = document.getElementById('toast-msg');
     const iconEl = document.getElementById('toast-icon');
-    const content = document.getElementById('toast-content');
     
     msgEl.innerText = msg;
     
@@ -977,7 +1093,6 @@ window.createTeam = async function() {
     const sportId = document.getElementById('new-team-sport').value;
     const sportName = document.getElementById('new-team-sport').options[document.getElementById('new-team-sport').selectedIndex].text;
     
-    // GENDER CHECK
     if (!checkGenderEligibility(sportName, 'Team')) return showToast("⚠️ Females allowed only in Relay & eSports.", "error");
 
     if(!name) return showToast("Enter Team Name", "error");
@@ -1021,7 +1136,6 @@ window.openManageTeamModal = async function(teamId, teamName, isLocked, isTourna
             ${m.user_id !== currentUser.id && !isLocked ? `<button onclick="window.removeMember('${m.id}', '${teamId}')" class="text-red-500"><i data-lucide="trash" class="w-3 h-3"></i></button>` : ''}
         </div>`).join('');
 
-    // Dynamic Lock Button
     const oldLock = document.getElementById('btn-lock-dynamic');
     if(oldLock) oldLock.remove();
     if (!isLocked) {
@@ -1048,12 +1162,7 @@ window.openManageTeamModal = async function(teamId, teamName, isLocked, isTourna
 window.handleRequest = async function(memberId, status, teamId) {
     if(status === 'Rejected') await supabaseClient.from('team_members').delete().eq('id', memberId);
     else await supabaseClient.from('team_members').update({ status: 'Accepted' }).eq('id', memberId);
-    // Refresh modal to update counts/lock state logic
-    // Ideally pass 'false' for lock since we just accepted
-    const tName = document.getElementById('manage-team-title').innerText.replace("Manage: ", "");
-    // Close and reopen to refresh state simply
     window.closeModal('modal-manage-team');
-    // We would need to refetch lock status here technically, but for now user can refresh locker
     window.loadTeamLocker();
 }
 
@@ -1085,8 +1194,17 @@ window.removeMember = function(memberId, teamId) {
     showConfirmDialog("Remove Player?", "Are you sure?", async () => {
         await supabaseClient.from('team_members').delete().eq('id', memberId);
         window.closeModal('modal-confirm');
-        const tName = document.getElementById('manage-team-title').innerText.replace("Manage: ", "");
-        // Refresh UI via locker reload for simplicity
         window.loadTeamLocker();
     });
+}
+
+// --- UTILS: TOAST INJECTOR ---
+function injectToastContainer() {
+    if(!document.getElementById('toast-container')) {
+        const div = document.createElement('div');
+        div.id = 'toast-container';
+        div.className = 'fixed bottom-10 left-1/2 transform -translate-x-1/2 z-[70] transition-all duration-300 opacity-0 pointer-events-none translate-y-10 w-11/12 max-w-sm';
+        div.innerHTML = `<div id="toast-content" class="bg-gray-900 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 backdrop-blur-md border border-gray-700/50"><div id="toast-icon"></div><p id="toast-msg" class="text-sm font-bold tracking-wide"></p></div>`;
+        document.body.appendChild(div);
+    }
 }
