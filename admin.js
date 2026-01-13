@@ -6,9 +6,9 @@ let tempSchedule = [];
 let currentMatchViewFilter = 'Scheduled'; 
 let allTeamsCache = []; // Search Cache
 let dataCache = []; // Export Cache
+let allRegistrationsCache = []; // Registration Cache
 let allSportsCache = []; // Volunteer Assignment Cache
-let allRegistrationsCache = []; // Registration Filter Cache
-let currentSort = { key: 'created_at', asc: false }; // Default Sort
+let currentSort = { key: 'date', asc: false };
 
 const DEFAULT_AVATAR = "https://t4.ftcdn.net/jpg/05/89/93/27/360_F_589932782_vQAEAZhHnq1QCGu5ikwrYaQD0Mmurm0N.jpg";
 
@@ -16,8 +16,8 @@ const DEFAULT_AVATAR = "https://t4.ftcdn.net/jpg/05/89/93/27/360_F_589932782_vQA
 document.addEventListener('DOMContentLoaded', async () => {
     if(window.lucide) lucide.createIcons();
     injectToastContainer();
-    injectScheduleModal(); // Ensure Modals Exist
-    injectWinnerModal();   // Manual Winner Declaration
+    injectScheduleModal();
+    injectWinnerModal();
     await checkAdminAuth();
     switchView('dashboard');
 });
@@ -39,16 +39,13 @@ async function checkAdminAuth() {
 }
 
 async function logAdminAction(action, details) {
-    console.log(`[ADMIN LOG] ${action}: ${details}`);
     try {
         await supabaseClient.from('admin_logs').insert({
             admin_email: currentUser.email,
             action: action,
             details: details
         });
-    } catch (err) {
-        console.error("Logging failed (Non-fatal):", err);
-    }
+    } catch (err) { console.error("Log failed:", err); }
 }
 
 function adminLogout() {
@@ -60,7 +57,6 @@ function adminLogout() {
 window.switchView = function(viewId) {
     currentView = viewId;
     
-    // Toggle Visibility
     document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
     const target = document.getElementById('view-' + viewId);
     if(target) {
@@ -70,23 +66,21 @@ window.switchView = function(viewId) {
         target.classList.add('animate-fade-in');
     }
 
-    // Update Sidebar
     document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
     const navBtn = document.getElementById('nav-' + viewId);
     if(navBtn) navBtn.classList.add('active');
 
-    // Update Title
     const titleEl = document.getElementById('page-title');
     if(titleEl) titleEl.innerText = viewId.charAt(0).toUpperCase() + viewId.slice(1);
 
-    // Toggle Export Buttons
+    // Export Buttons Toggle
     const globalActions = document.getElementById('global-actions');
     if(globalActions) {
         if (['users', 'teams', 'matches', 'logs', 'registrations'].includes(viewId)) globalActions.classList.remove('hidden');
         else globalActions.classList.add('hidden');
     }
 
-    // Data Loading Routing
+    // Data Loaders
     dataCache = [];
     if(viewId === 'users') loadUsersList();
     if(viewId === 'sports') loadSportsList();
@@ -106,7 +100,7 @@ window.exportCurrentPage = function(type) {
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
         XLSX.writeFile(wb, `${filename}.xlsx`);
-        logAdminAction('EXPORT_EXCEL', `Exported ${currentView} view`);
+        logAdminAction('EXPORT_EXCEL', `Exported ${currentView}`);
     } 
     else if (type === 'pdf') {
         const { jsPDF } = window.jspdf;
@@ -118,7 +112,7 @@ window.exportCurrentPage = function(type) {
         doc.text(`URJA 2026 - ${currentView.toUpperCase()}`, 14, 22);
         doc.autoTable({ head: [headers], body: rows, startY: 30, theme: 'grid', styles: { fontSize: 8 } });
         doc.save(`${filename}.pdf`);
-        logAdminAction('EXPORT_PDF', `Exported ${currentView} view`);
+        logAdminAction('EXPORT_PDF', `Exported ${currentView}`);
     }
 }
 
@@ -218,7 +212,7 @@ window.toggleSportStatus = async function(id, currentStatus) {
     loadSportsList();
 }
 
-// --- 6. SCHEDULER & MATCH ACTIONS ---
+// --- 6. SCHEDULER ---
 
 window.handleScheduleClick = async function(sportId, sportName, isPerformance, sportType) {
     if (isPerformance) {
@@ -228,7 +222,6 @@ window.handleScheduleClick = async function(sportId, sportName, isPerformance, s
     }
 }
 
-// A. PERFORMANCE EVENTS
 async function initPerformanceEvent(sportId, sportName) {
     const { data: existing } = await supabaseClient.from('matches').select('id').eq('sport_id', sportId).neq('status', 'Completed');
     if (existing && existing.length > 0) return showToast("Event is already active!", "info");
@@ -272,28 +265,25 @@ window.endPerformanceEvent = async function(matchId) {
     });
 
     const finalData = [...validEntries, ...arr.filter(p => !p.result || p.result.trim() === '')];
-    
-    // UPDATED: Show Gold, Silver, Bronze
     const winnerText = `Gold: ${winners.gold || '-'}, Silver: ${winners.silver || '-'}, Bronze: ${winners.bronze || '-'}`;
 
     const { error } = await supabaseClient.from('matches').update({ 
         performance_data: finalData, 
         status: 'Completed', 
         winner_text: winnerText, 
-        winners_data: winners, // Saves JSON object with {gold, silver, bronze}
+        winners_data: winners, 
         is_live: false 
     }).eq('id', matchId);
 
     if(error) showToast("Error: " + error.message, "error");
     else {
         showToast("Event Ended! Winners Declared.", "success");
-        logAdminAction('END_EVENT', `Ended Match ID ${matchId} with Winners`);
+        logAdminAction('END_EVENT', `Ended Match ID ${matchId}`);
         loadMatches(currentMatchViewFilter); 
         loadSportsList(); 
     }
 }
 
-// B. TOURNAMENT ROUNDS
 async function initTournamentRound(sportId, sportName, sportType) {
     showToast("Analyzing Bracket...", "info");
     const intSportId = parseInt(sportId); 
@@ -304,7 +294,6 @@ async function initTournamentRound(sportId, sportName, sportType) {
     let candidates = [];
 
     if (!latestMatches || latestMatches.length === 0) {
-        // ROUND 1: Initialization
         if (sportType === 'Individual') await supabaseClient.rpc('prepare_individual_teams', { sport_id_input: intSportId });
         await supabaseClient.rpc('auto_lock_tournament_teams', { sport_id_input: intSportId });
 
@@ -313,7 +302,6 @@ async function initTournamentRound(sportId, sportName, sportType) {
 
         candidates = validTeams.map(t => ({ id: t.team_id, name: t.team_name, category: t.category }));
     } else {
-        // NEXT ROUNDS: Winner Propagation
         const lastRound = latestMatches[0].round_number;
         const { count: pendingCount } = await supabaseClient.from('matches').select('*', { count: 'exact', head: true }).eq('sport_id', intSportId).eq('round_number', lastRound).neq('status', 'Completed');
 
@@ -337,14 +325,12 @@ async function initTournamentRound(sportId, sportName, sportType) {
 
     tempSchedule = [];
     
-    // SMART MATCH TYPING
     let matchType = 'Regular';
     if (candidates.length === 2) matchType = 'Final';
     else if (candidates.length <= 4) matchType = 'Semi-Final';
     else if (candidates.length <= 8) matchType = 'Quarter-Final';
 
     if (candidates.length <= 4) {
-        // Merge Pools for Semi/Finals
         candidates.sort(() => Math.random() - 0.5); 
         generatePairsFromList(candidates, round, matchType);
     } else {
@@ -379,7 +365,6 @@ function openSchedulePreviewModal(sportName, round, schedule, sportId) {
     }
 
     titleEl.innerText = `Generating Round ${round}`;
-    
     const venueOptions = `<option value="College Ground">College Ground</option><option value="Badminton Hall">Badminton Hall</option><option value="Old Gymkhana">Old Gymkhana</option>`;
 
     container.innerHTML = schedule.map((m, idx) => `
@@ -437,7 +422,7 @@ async function confirmSchedule(sportId) {
     }
 }
 
-// --- 7. MANUAL WINNER DECLARATION (Fix Duplicate Results) ---
+// --- 7. FORCE WINNER (FIXED DUPLICATES) ---
 async function openForceWinnerModal(sportId, sportName) {
     const { data: teams } = await supabaseClient.from('teams').select('id, name').eq('sport_id', sportId);
     if(!teams || teams.length === 0) return showToast("No teams found.", "error");
@@ -467,26 +452,25 @@ async function confirmForceWinner(sportId, sportName) {
     const winnersData = { gold: gName, silver: sName, bronze: bName };
     const winnerText = `Gold: ${gName}, Silver: ${sName}, Bronze: ${bName}`;
 
-    // CHECK IF A FINAL ALREADY EXISTS (Prevents duplicates)
+    // FIX: CHECK IF FINAL ALREADY EXISTS TO PREVENT DUPLICATES
     const { data: existing } = await supabaseClient
         .from('matches')
         .select('id')
         .eq('sport_id', sportId)
-        .eq('match_type', 'Final')
-        .eq('status', 'Completed')
-        .limit(1);
+        .eq('team1_name', 'Tournament Result')
+        .single();
 
     let error;
-    if (existing && existing.length > 0) {
-        // UPDATE Existing
+    if (existing) {
+        // UPDATE EXISTING
         const { error: updErr } = await supabaseClient.from('matches').update({
             winner_id: gId,
             winner_text: winnerText,
             winners_data: winnersData
-        }).eq('id', existing[0].id);
+        }).eq('id', existing.id);
         error = updErr;
     } else {
-        // INSERT New
+        // INSERT NEW
         const { error: insErr } = await supabaseClient.from('matches').insert({
             sport_id: sportId,
             team1_name: "Tournament Result",
@@ -511,7 +495,7 @@ async function confirmForceWinner(sportId, sportName) {
     }
 }
 
-// --- 8. REGISTRATIONS LIST VIEW (New Feature) ---
+// --- 8. REGISTRATIONS LIST (NEW VIEW) ---
 async function loadRegistrationsList() {
     const tbody = document.getElementById('registrations-table-body');
     if(!tbody) return;
@@ -520,15 +504,18 @@ async function loadRegistrationsList() {
     const { data: regs, error } = await supabaseClient
         .from('registrations')
         .select(`
-            created_at, status,
-            users:user_id(first_name, last_name, student_id, class_name, gender, mobile, email),
-            sports:sport_id(name)
+            id, created_at, status,
+            users (first_name, last_name, student_id, class_name, gender, mobile, email),
+            sports (name)
         `)
         .order('created_at', { ascending: false });
 
-    if(error) return showToast("Failed to load registrations", "error");
+    if(error) {
+        console.error(error);
+        return showToast("Failed to load registrations", "error");
+    }
 
-    // Flatten Data for Cache & Display
+    // Flatten Data
     allRegistrationsCache = regs.map(r => ({
         name: `${r.users.first_name} ${r.users.last_name}`,
         student_id: r.users.student_id,
@@ -544,7 +531,7 @@ async function loadRegistrationsList() {
     // Populate Filters
     const sports = [...new Set(allRegistrationsCache.map(r => r.sport))].sort();
     const sportSelect = document.getElementById('filter-reg-sport');
-    if(sportSelect) {
+    if(sportSelect && sportSelect.children.length <= 1) {
         sportSelect.innerHTML = `<option value="">All Sports</option>` + sports.map(s => `<option value="${s}">${s}</option>`).join('');
     }
 
@@ -557,10 +544,10 @@ function renderRegistrations(data) {
     if(!tbody) return;
 
     if(countEl) countEl.innerText = data.length;
-    dataCache = data; // Update export cache
+    dataCache = data;
 
     if(data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="p-8 text-center text-gray-400 font-bold">No records found matching filters.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="p-8 text-center text-gray-400 font-bold">No records found.</td></tr>';
         return;
     }
 
@@ -856,7 +843,6 @@ function injectScheduleModal() {
     document.body.appendChild(div);
 }
 
-// NEW: 3-Way Winner Modal
 function injectWinnerModal() {
     if(document.getElementById('modal-force-winner')) return;
     const div = document.createElement('div');
