@@ -156,7 +156,7 @@ function renderMatches(matches) {
     lucide.createIcons();
 }
 
-// --- FULL VIEW MATCH PANEL (REDESIGNED) ---
+// --- FULL VIEW MATCH PANEL (VERTICAL STACK) ---
 
 window.openMatchPanel = function(matchId) {
     const match = allMatchesCache.find(m => m.id === matchId);
@@ -173,14 +173,13 @@ window.openMatchPanel = function(matchId) {
 
 function updateLivePanelUI(match) {
     const content = document.getElementById('live-match-content');
-    // Only update if modal is actually open
     if (!document.getElementById('modal-live-match').classList.contains('hidden')) {
-        // We re-render to keep it simple, or we could target specific IDs for optimized updates
         content.innerHTML = generateMatchHTML(match);
         lucide.createIcons();
-        // Restore dropdown selection if it was set
+        
+        // Ensure dropdown retains value if previously selected
         const select = document.getElementById(`winner-select-${match.id}`);
-        // Logic to keep selection if user was mid-selection could go here
+        // Logic to keep selection would require local state tracking, simplified here to reset
     }
 }
 
@@ -189,52 +188,57 @@ function generateMatchHTML(match) {
     const t2Init = match.team2_name.charAt(0).toUpperCase();
 
     return `
-        <div class="grid grid-cols-2 gap-4 mb-6">
-            <div class="bg-white p-4 rounded-3xl shadow-sm border border-gray-100 flex flex-col items-center">
-                <div class="w-10 h-10 bg-indigo-100 text-brand-primary rounded-full flex items-center justify-center font-black text-lg mb-2">${t1Init}</div>
-                <h4 class="font-bold text-sm text-center leading-tight h-10 flex items-center justify-center w-full overflow-hidden mb-2">${match.team1_name}</h4>
+        <div class="flex flex-col gap-4 mb-6">
+            
+            <div class="bg-white p-5 rounded-3xl shadow-sm border border-gray-100 flex flex-col items-center">
+                <div class="w-12 h-12 bg-indigo-100 text-brand-primary rounded-full flex items-center justify-center font-black text-xl mb-2">${t1Init}</div>
+                <h4 class="font-bold text-lg text-center leading-tight w-full mb-3 text-gray-900">${match.team1_name}</h4>
                 
-                <span class="text-6xl font-black text-gray-900 tracking-tighter mb-4">${match.score1 || 0}</span>
+                <span class="text-6xl font-black text-brand-primary tracking-tighter mb-4">${match.score1 || 0}</span>
                 
-                <div class="flex gap-2 w-full">
-                    <button onclick="updateScore('${match.id}', 'score1', -1, ${match.score1})" class="flex-1 py-3 bg-gray-100 rounded-xl text-gray-500 font-bold text-xl active:scale-90 transition-transform">-</button>
-                    <button onclick="updateScore('${match.id}', 'score1', 1, ${match.score1})" class="flex-[2] py-3 bg-brand-primary text-white rounded-xl font-bold text-2xl shadow-lg shadow-indigo-200 active:scale-90 transition-transform">+</button>
+                <div class="flex gap-3 w-full">
+                    <button onclick="updateScore('${match.id}', 'score1', -1, ${match.score1})" class="flex-1 py-4 bg-gray-100 rounded-2xl text-gray-500 font-bold text-2xl active:scale-95 transition-transform">-</button>
+                    <button onclick="updateScore('${match.id}', 'score1', 1, ${match.score1})" class="flex-[2] py-4 bg-brand-primary text-white rounded-2xl font-bold text-3xl shadow-lg shadow-indigo-200 active:scale-95 transition-transform">+</button>
                 </div>
             </div>
 
-            <div class="bg-white p-4 rounded-3xl shadow-sm border border-gray-100 flex flex-col items-center">
-                <div class="w-10 h-10 bg-pink-100 text-pink-600 rounded-full flex items-center justify-center font-black text-lg mb-2">${t2Init}</div>
-                <h4 class="font-bold text-sm text-center leading-tight h-10 flex items-center justify-center w-full overflow-hidden mb-2">${match.team2_name}</h4>
+            <div class="relative flex items-center justify-center py-2">
+                <div class="h-px bg-gray-200 w-full absolute"></div>
+                <span class="relative bg-gray-100 text-gray-400 font-black text-xs px-3 py-1 rounded-full uppercase tracking-widest z-10">VS</span>
+            </div>
+
+            <div class="bg-white p-5 rounded-3xl shadow-sm border border-gray-100 flex flex-col items-center">
+                <div class="w-12 h-12 bg-pink-100 text-pink-600 rounded-full flex items-center justify-center font-black text-xl mb-2">${t2Init}</div>
+                <h4 class="font-bold text-lg text-center leading-tight w-full mb-3 text-gray-900">${match.team2_name}</h4>
                 
-                <span class="text-6xl font-black text-gray-900 tracking-tighter mb-4">${match.score2 || 0}</span>
+                <span class="text-6xl font-black text-pink-600 tracking-tighter mb-4">${match.score2 || 0}</span>
                 
-                <div class="flex gap-2 w-full">
-                    <button onclick="updateScore('${match.id}', 'score2', -1, ${match.score2})" class="flex-1 py-3 bg-gray-100 rounded-xl text-gray-500 font-bold text-xl active:scale-90 transition-transform">-</button>
-                    <button onclick="updateScore('${match.id}', 'score2', 1, ${match.score2})" class="flex-[2] py-3 bg-brand-primary text-white rounded-xl font-bold text-2xl shadow-lg shadow-indigo-200 active:scale-90 transition-transform">+</button>
+                <div class="flex gap-3 w-full">
+                    <button onclick="updateScore('${match.id}', 'score2', -1, ${match.score2})" class="flex-1 py-4 bg-gray-100 rounded-2xl text-gray-500 font-bold text-2xl active:scale-95 transition-transform">-</button>
+                    <button onclick="updateScore('${match.id}', 'score2', 1, ${match.score2})" class="flex-[2] py-4 bg-pink-600 text-white rounded-2xl font-bold text-3xl shadow-lg shadow-pink-200 active:scale-95 transition-transform">+</button>
                 </div>
             </div>
         </div>
 
-        <div class="h-px bg-gray-200 w-full mb-6"></div>
-
         <div class="space-y-4">
-            <div class="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
+            
+            <button onclick="declareWalkover('${match.id}')" class="w-full py-4 border-2 border-red-50 bg-white text-red-500 font-bold rounded-2xl text-xs uppercase tracking-wide hover:bg-red-50 transition-colors flex items-center justify-center gap-2">
+                <i data-lucide="user-x" class="w-4 h-4"></i> Declare Walkover (Absent)
+            </button>
+
+            <div class="p-5 bg-gray-900 rounded-3xl shadow-2xl mt-4">
                 <label class="text-[10px] font-bold text-gray-400 uppercase mb-3 block tracking-wide ml-1">Finish Match</label>
                 
-                <select id="winner-select-${match.id}" onchange="enableEndBtn('${match.id}')" class="w-full p-4 bg-gray-50 border-none rounded-xl text-sm font-bold text-gray-800 outline-none focus:ring-2 focus:ring-brand-primary/20 mb-4 appearance-none">
-                    <option value="">Select Official Winner...</option>
+                <select id="winner-select-${match.id}" onchange="enableEndBtn('${match.id}')" class="w-full p-4 bg-gray-800 text-white border border-gray-700 rounded-xl text-base font-bold outline-none focus:border-brand-primary mb-4 appearance-none">
+                    <option value="" class="text-gray-500">Select Official Winner...</option>
                     <option value="${match.team1_id}">${match.team1_name}</option>
                     <option value="${match.team2_id}">${match.team2_name}</option>
                 </select>
 
-                <button id="btn-end-${match.id}" onclick="endMatch('${match.id}')" disabled class="w-full py-4 bg-gray-200 text-gray-400 font-bold rounded-xl cursor-not-allowed transition-all flex items-center justify-center gap-2">
-                    <i data-lucide="trophy" class="w-5 h-5"></i> End Match
+                <button id="btn-end-${match.id}" onclick="endMatch('${match.id}')" disabled class="w-full py-4 bg-gray-700 text-gray-500 font-bold rounded-xl cursor-not-allowed transition-all flex items-center justify-center gap-2">
+                    <i data-lucide="trophy" class="w-5 h-5"></i> End Match & Save
                 </button>
             </div>
-
-            <button onclick="declareWalkover('${match.id}')" class="w-full py-4 text-red-500 font-bold text-xs uppercase tracking-wide hover:bg-red-50 rounded-xl transition-colors">
-                Opponent Absent? Declare Walkover
-            </button>
         </div>
     `;
 }
@@ -267,14 +271,22 @@ window.startMatch = function(matchId) {
 window.updateScore = async function(matchId, scoreField, delta, currentVal) {
     const newVal = Math.max(0, (currentVal || 0) + delta);
     
-    // Update DB
+    // 1. Optimistic UI Update (Full View) - Note: re-render handles this mostly
+    // 2. Update Cache
+    const match = allMatchesCache.find(m => m.id === matchId);
+    if(match) match[scoreField] = newVal;
+
+    // 3. Update DB
     const { error } = await supabaseClient
         .from('matches')
         .update({ [scoreField]: newVal })
         .eq('id', matchId);
 
     if (error) showToast("Sync Error", "error");
-    else loadAssignedMatches(); // Trigger reload which updates full panel via allMatchesCache
+    else {
+        // Re-render UI to show new score immediately
+        if(currentLiveMatchId === matchId) updateLivePanelUI(match);
+    }
 }
 
 window.enableEndBtn = function(matchId) {
@@ -284,12 +296,12 @@ window.enableEndBtn = function(matchId) {
 
     if (select.value) {
         btn.disabled = false;
-        btn.classList.remove('bg-gray-200', 'text-gray-400', 'cursor-not-allowed');
-        btn.classList.add('bg-black', 'text-white', 'shadow-xl', 'active:scale-95');
+        btn.classList.remove('bg-gray-700', 'text-gray-500', 'cursor-not-allowed');
+        btn.classList.add('bg-brand-primary', 'text-white', 'shadow-xl', 'active:scale-95');
     } else {
         btn.disabled = true;
-        btn.classList.add('bg-gray-200', 'text-gray-400', 'cursor-not-allowed');
-        btn.classList.remove('bg-black', 'text-white', 'shadow-xl', 'active:scale-95');
+        btn.classList.add('bg-gray-700', 'text-gray-500', 'cursor-not-allowed');
+        btn.classList.remove('bg-brand-primary', 'text-white', 'shadow-xl', 'active:scale-95');
     }
 }
 
@@ -322,9 +334,18 @@ window.endMatch = function(matchId) {
 }
 
 window.declareWalkover = function(matchId) {
-    showConfirmDialog("Declare Walkover?", "Is the opponent absent? You will need to select the PRESENT team as the winner.", () => {
+    // Directly guide them to the winner selection at the bottom
+    showConfirmDialog("Declare Walkover?", "Is the opponent absent? Please select the PRESENT team in the box below to finish.", () => {
         closeModal('modal-confirm');
-        showToast("Please select the Winner below to finish.", "info");
+        // Scroll to bottom
+        const content = document.getElementById('live-match-content');
+        content.scrollTop = content.scrollHeight;
+        // Highlight dropdown
+        const select = document.getElementById(`winner-select-${matchId}`);
+        if(select) {
+            select.classList.add('ring-2', 'ring-red-500');
+            setTimeout(() => select.classList.remove('ring-2', 'ring-red-500'), 1000);
+        }
     });
 }
 
