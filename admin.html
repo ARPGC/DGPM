@@ -5,15 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard | URJA 2026</title>
     
+    <link rel="icon" type="image/png" href="favicon.png">
+
     <script src="https://cdn.tailwindcss.com"></script>
-    
     <script src="https://unpkg.com/lucide@latest"></script>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
 
-   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="config.js"></script>
     <script src="config2.js"></script> <script src="admin.js" defer></script>
 
@@ -296,6 +297,17 @@
                 <div>
                     <label class="text-[10px] font-bold text-gray-400 uppercase tracking-wide ml-1 mb-1 block">Team Size</label>
                     <input type="number" id="new-sport-size" placeholder="1 for Individual" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none focus:border-brand-primary transition-colors" required>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-400 uppercase tracking-wide ml-1 mb-1 block">Jr Limit (Teams)</label>
+                        <input type="number" id="new-sport-limit-jr" placeholder="e.g. 16" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none focus:border-brand-primary transition-colors">
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-400 uppercase tracking-wide ml-1 mb-1 block">Sr Limit (Teams)</label>
+                        <input type="number" id="new-sport-limit-sr" placeholder="e.g. 32" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none focus:border-brand-primary transition-colors">
+                    </div>
                 </div>
 
                 <button type="submit" class="w-full py-3.5 bg-black text-white font-bold rounded-xl shadow-lg active:scale-95 transition-transform mt-2">Create Sport</button>
