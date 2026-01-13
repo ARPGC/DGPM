@@ -156,7 +156,7 @@ function renderMatches(matches) {
     lucide.createIcons();
 }
 
-// --- FULL VIEW MATCH PANEL (VERTICAL STACK) ---
+// --- FULL VIEW MATCH PANEL (VERTICAL STACK FIX) ---
 
 window.openMatchPanel = function(matchId) {
     const match = allMatchesCache.find(m => m.id === matchId);
@@ -176,10 +176,6 @@ function updateLivePanelUI(match) {
     if (!document.getElementById('modal-live-match').classList.contains('hidden')) {
         content.innerHTML = generateMatchHTML(match);
         lucide.createIcons();
-        
-        // Ensure dropdown retains value if previously selected
-        const select = document.getElementById(`winner-select-${match.id}`);
-        // Logic to keep selection would require local state tracking, simplified here to reset
     }
 }
 
@@ -188,54 +184,56 @@ function generateMatchHTML(match) {
     const t2Init = match.team2_name.charAt(0).toUpperCase();
 
     return `
-        <div class="flex flex-col gap-4 mb-6">
+        <div class="flex flex-col gap-6 mb-8 w-full max-w-sm mx-auto">
             
-            <div class="bg-white p-5 rounded-3xl shadow-sm border border-gray-100 flex flex-col items-center">
-                <div class="w-12 h-12 bg-indigo-100 text-brand-primary rounded-full flex items-center justify-center font-black text-xl mb-2">${t1Init}</div>
-                <h4 class="font-bold text-lg text-center leading-tight w-full mb-3 text-gray-900">${match.team1_name}</h4>
+            <div class="bg-white p-5 rounded-3xl shadow-lg border border-indigo-50 flex flex-col items-center w-full">
+                <div class="w-12 h-12 bg-indigo-100 text-brand-primary rounded-full flex items-center justify-center font-black text-xl mb-3 shadow-inner">${t1Init}</div>
+                <h4 class="font-bold text-lg text-center leading-tight w-full mb-3 text-gray-900 truncate px-2">${match.team1_name}</h4>
                 
-                <span class="text-6xl font-black text-brand-primary tracking-tighter mb-4">${match.score1 || 0}</span>
+                <span class="text-6xl font-black text-brand-primary tracking-tighter mb-5">${match.score1 || 0}</span>
                 
-                <div class="flex gap-3 w-full">
-                    <button onclick="updateScore('${match.id}', 'score1', -1, ${match.score1})" class="flex-1 py-4 bg-gray-100 rounded-2xl text-gray-500 font-bold text-2xl active:scale-95 transition-transform">-</button>
-                    <button onclick="updateScore('${match.id}', 'score1', 1, ${match.score1})" class="flex-[2] py-4 bg-brand-primary text-white rounded-2xl font-bold text-3xl shadow-lg shadow-indigo-200 active:scale-95 transition-transform">+</button>
+                <div class="flex gap-3 w-full px-2">
+                    <button onclick="updateScore('${match.id}', 'score1', -1, ${match.score1})" class="flex-1 py-3 bg-gray-100 rounded-2xl text-gray-500 font-bold text-2xl active:scale-95 transition-transform">-</button>
+                    <button onclick="updateScore('${match.id}', 'score1', 1, ${match.score1})" class="flex-[2] py-3 bg-brand-primary text-white rounded-2xl font-bold text-3xl shadow-lg shadow-indigo-200 active:scale-95 transition-transform">+</button>
                 </div>
             </div>
 
             <div class="relative flex items-center justify-center py-2">
-                <div class="h-px bg-gray-200 w-full absolute"></div>
-                <span class="relative bg-gray-100 text-gray-400 font-black text-xs px-3 py-1 rounded-full uppercase tracking-widest z-10">VS</span>
+                <div class="h-px bg-gray-300 w-full absolute"></div>
+                <span class="relative bg-white text-gray-400 font-black text-xs px-4 py-1.5 rounded-full uppercase tracking-widest z-10 border border-gray-200 shadow-sm">VS</span>
             </div>
 
-            <div class="bg-white p-5 rounded-3xl shadow-sm border border-gray-100 flex flex-col items-center">
-                <div class="w-12 h-12 bg-pink-100 text-pink-600 rounded-full flex items-center justify-center font-black text-xl mb-2">${t2Init}</div>
-                <h4 class="font-bold text-lg text-center leading-tight w-full mb-3 text-gray-900">${match.team2_name}</h4>
+            <div class="bg-white p-5 rounded-3xl shadow-lg border border-pink-50 flex flex-col items-center w-full">
+                <div class="w-12 h-12 bg-pink-100 text-pink-600 rounded-full flex items-center justify-center font-black text-xl mb-3 shadow-inner">${t2Init}</div>
+                <h4 class="font-bold text-lg text-center leading-tight w-full mb-3 text-gray-900 truncate px-2">${match.team2_name}</h4>
                 
-                <span class="text-6xl font-black text-pink-600 tracking-tighter mb-4">${match.score2 || 0}</span>
+                <span class="text-6xl font-black text-pink-600 tracking-tighter mb-5">${match.score2 || 0}</span>
                 
-                <div class="flex gap-3 w-full">
-                    <button onclick="updateScore('${match.id}', 'score2', -1, ${match.score2})" class="flex-1 py-4 bg-gray-100 rounded-2xl text-gray-500 font-bold text-2xl active:scale-95 transition-transform">-</button>
-                    <button onclick="updateScore('${match.id}', 'score2', 1, ${match.score2})" class="flex-[2] py-4 bg-pink-600 text-white rounded-2xl font-bold text-3xl shadow-lg shadow-pink-200 active:scale-95 transition-transform">+</button>
+                <div class="flex gap-3 w-full px-2">
+                    <button onclick="updateScore('${match.id}', 'score2', -1, ${match.score2})" class="flex-1 py-3 bg-gray-100 rounded-2xl text-gray-500 font-bold text-2xl active:scale-95 transition-transform">-</button>
+                    <button onclick="updateScore('${match.id}', 'score2', 1, ${match.score2})" class="flex-[2] py-3 bg-pink-600 text-white rounded-2xl font-bold text-3xl shadow-lg shadow-pink-200 active:scale-95 transition-transform">+</button>
                 </div>
             </div>
         </div>
 
-        <div class="space-y-4">
+        <div class="space-y-6 w-full max-w-sm mx-auto pb-10">
             
-            <button onclick="declareWalkover('${match.id}')" class="w-full py-4 border-2 border-red-50 bg-white text-red-500 font-bold rounded-2xl text-xs uppercase tracking-wide hover:bg-red-50 transition-colors flex items-center justify-center gap-2">
+            <button onclick="declareWalkover('${match.id}')" class="w-full py-4 border-2 border-red-50 bg-white text-red-500 font-bold rounded-2xl text-xs uppercase tracking-wide hover:bg-red-50 transition-colors flex items-center justify-center gap-2 shadow-sm">
                 <i data-lucide="user-x" class="w-4 h-4"></i> Declare Walkover (Absent)
             </button>
 
-            <div class="p-5 bg-gray-900 rounded-3xl shadow-2xl mt-4">
-                <label class="text-[10px] font-bold text-gray-400 uppercase mb-3 block tracking-wide ml-1">Finish Match</label>
+            <div class="p-6 bg-gray-900 rounded-[2rem] shadow-2xl relative overflow-hidden">
+                <div class="absolute top-0 right-0 w-24 h-24 bg-gray-800 rounded-full -mr-10 -mt-10 opacity-50"></div>
                 
-                <select id="winner-select-${match.id}" onchange="enableEndBtn('${match.id}')" class="w-full p-4 bg-gray-800 text-white border border-gray-700 rounded-xl text-base font-bold outline-none focus:border-brand-primary mb-4 appearance-none">
+                <label class="text-[10px] font-bold text-gray-400 uppercase mb-4 block tracking-wide ml-1">Finish Match</label>
+                
+                <select id="winner-select-${match.id}" onchange="enableEndBtn('${match.id}')" class="w-full p-4 bg-gray-800 text-white border border-gray-700 rounded-2xl text-base font-bold outline-none focus:border-brand-primary mb-5 appearance-none cursor-pointer">
                     <option value="" class="text-gray-500">Select Official Winner...</option>
                     <option value="${match.team1_id}">${match.team1_name}</option>
                     <option value="${match.team2_id}">${match.team2_name}</option>
                 </select>
 
-                <button id="btn-end-${match.id}" onclick="endMatch('${match.id}')" disabled class="w-full py-4 bg-gray-700 text-gray-500 font-bold rounded-xl cursor-not-allowed transition-all flex items-center justify-center gap-2">
+                <button id="btn-end-${match.id}" onclick="endMatch('${match.id}')" disabled class="w-full py-4 bg-gray-700 text-gray-500 font-bold rounded-2xl cursor-not-allowed transition-all flex items-center justify-center gap-2 shadow-inner">
                     <i data-lucide="trophy" class="w-5 h-5"></i> End Match & Save
                 </button>
             </div>
@@ -271,22 +269,13 @@ window.startMatch = function(matchId) {
 window.updateScore = async function(matchId, scoreField, delta, currentVal) {
     const newVal = Math.max(0, (currentVal || 0) + delta);
     
-    // 1. Optimistic UI Update (Full View) - Note: re-render handles this mostly
-    // 2. Update Cache
-    const match = allMatchesCache.find(m => m.id === matchId);
-    if(match) match[scoreField] = newVal;
-
-    // 3. Update DB
     const { error } = await supabaseClient
         .from('matches')
         .update({ [scoreField]: newVal })
         .eq('id', matchId);
 
     if (error) showToast("Sync Error", "error");
-    else {
-        // Re-render UI to show new score immediately
-        if(currentLiveMatchId === matchId) updateLivePanelUI(match);
-    }
+    else loadAssignedMatches(); 
 }
 
 window.enableEndBtn = function(matchId) {
@@ -334,18 +323,24 @@ window.endMatch = function(matchId) {
 }
 
 window.declareWalkover = function(matchId) {
-    // Directly guide them to the winner selection at the bottom
-    showConfirmDialog("Declare Walkover?", "Is the opponent absent? Please select the PRESENT team in the box below to finish.", () => {
+    // 1. Close Modal Immediately when they click Yes
+    showConfirmDialog("Declare Walkover?", "Is the opponent absent? You will need to select the PRESENT team as the winner.", () => {
         closeModal('modal-confirm');
-        // Scroll to bottom
+        
+        // 2. Scroll to Bottom
         const content = document.getElementById('live-match-content');
-        content.scrollTop = content.scrollHeight;
-        // Highlight dropdown
+        if(content) content.scrollTop = content.scrollHeight;
+        
+        // 3. Highlight Dropdown
         const select = document.getElementById(`winner-select-${matchId}`);
         if(select) {
-            select.classList.add('ring-2', 'ring-red-500');
-            setTimeout(() => select.classList.remove('ring-2', 'ring-red-500'), 1000);
+            select.focus();
+            select.classList.add('ring-4', 'ring-green-500'); // Visual cue
+            setTimeout(() => select.classList.remove('ring-4', 'ring-green-500'), 2000);
         }
+        
+        // 4. Show Toast
+        showToast("Please select the Winner below to finish.", "info");
     });
 }
 
