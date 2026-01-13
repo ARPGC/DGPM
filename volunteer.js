@@ -23,12 +23,14 @@
     let assignedSportId = null;
     let currentMatchId = null;
     let currentScores = { s1: 0, s2: 0 };
+    let confirmCallback = null; // Stores the function to run when "Yes" is clicked
 
     // --- 4. INITIALIZATION ---
     document.addEventListener('DOMContentLoaded', async () => {
         if(window.lucide) lucide.createIcons();
         injectToastContainer();
         injectScoringModal();
+        setupConfirmModal();
         
         await checkVolunteerAuth();
     });
@@ -121,7 +123,11 @@
         const container = document.getElementById('matches-list');
         if(!container) return;
         
-        container.innerHTML = '<div class="text-center py-10"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary mx-auto mb-2"></div><p class="text-gray-400 text-sm">Loading schedule...</p></div>';
+        // Don't show loading spinner if we are just refreshing data behind a modal
+        const isModalOpen = !document.getElementById('modal-scoring').classList.contains('hidden');
+        if(!isModalOpen) {
+            container.innerHTML = '<div class="text-center py-10"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary mx-auto mb-2"></div><p class="text-gray-400 text-sm">Loading schedule...</p></div>';
+        }
 
         const { data: matches, error } = await supabaseClient
             .from('matches')
@@ -146,15 +152,16 @@
             return;
         }
 
-        // --- SORTING: Live Matches First ---
+        // --- SORTING: Live Matches Strictly First ---
         matches.sort((a, b) => {
             if (a.status === 'Live' && b.status !== 'Live') return -1;
             if (a.status !== 'Live' && b.status === 'Live') return 1;
+            // Then by time
             return new Date(a.start_time) - new Date(b.start_time);
         });
 
         container.innerHTML = matches.map(m => `
-            <div class="bg-white p-5 rounded-2xl border ${m.status === 'Live' ? 'border-red-100 shadow-lg shadow-red-50' : 'border-gray-200 shadow-sm'} relative overflow-hidden transition-all hover:shadow-md">
+            <div class="bg-white p-5 rounded-2xl border ${m.status === 'Live' ? 'border-red-100 shadow-lg shadow-red-50 ring-1 ring-red-50' : 'border-gray-200 shadow-sm'} relative overflow-hidden transition-all hover:shadow-md mb-4">
                 ${m.status === 'Live' ? 
                     `<div class="absolute top-0 right-0 bg-red-600 text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl animate-pulse flex items-center gap-1"><span class="w-1.5 h-1.5 bg-white rounded-full"></span> LIVE</div>` 
                 : ''}
@@ -195,26 +202,31 @@
 
     // --- 8. MATCH ACTIONS ---
     
-    // START MATCH (Auto-opens Scoring)
+    // START MATCH (Auto-opens Scoring + Custom Alert)
     window.startMatch = async function(matchId) {
-        if(!confirm("Start this match? Scores will go LIVE.")) return;
+        showConfirmDialog(
+            "Start Match?",
+            "This will broadcast the match LIVE on the dashboard. Scores will be reset to 0-0.",
+            async () => {
+                // 1. Update Main DB
+                const { error } = await supabaseClient
+                    .from('matches')
+                    .update({ status: 'Live', is_live: true, score1: 0, score2: 0 })
+                    .eq('id', matchId);
 
-        // 1. Update Main DB
-        const { error } = await supabaseClient
-            .from('matches')
-            .update({ status: 'Live', is_live: true, score1: 0, score2: 0 })
-            .eq('id', matchId);
+                if (error) return showToast("Error starting match", "error");
 
-        if (error) return showToast("Error starting match", "error");
-
-        showToast("Match Started!", "success");
-        
-        // 2. Sync to Realtime
-        await syncToRealtime(matchId);
-        
-        // 3. Refresh & Open Modal
-        await loadMyMatches();
-        setTimeout(() => window.openScoring(matchId), 300);
+                showToast("Match Started!", "success");
+                
+                // 2. Sync to Realtime
+                await syncToRealtime(matchId);
+                
+                // 3. Refresh List & OPEN SCORING IMMEDIATELY
+                await loadMyMatches();
+                window.closeConfirmModal();
+                window.openScoring(matchId); 
+            }
+        );
     }
 
     // SCORING MODAL
@@ -266,7 +278,7 @@
     window.saveScores = async function() {
         const btn = document.getElementById('btn-save-score');
         const originalText = btn.innerHTML;
-        btn.innerText = "Syncing...";
+        btn.innerHTML = `<div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white inline-block"></div> Syncing`;
         btn.disabled = true;
 
         // 1. Update Main DB
@@ -292,7 +304,7 @@
         loadMyMatches();
     }
 
-    // END MATCH (With Logic)
+    // END MATCH (With Custom Alert)
     window.endMatch = async function() {
         const resultType = document.getElementById('winner-select').value;
         const t1Name = document.getElementById('score-t1-name').innerText;
@@ -316,37 +328,70 @@
             winnerText = `${t2Name} Won (Walkover)`;
         }
 
-        if(!confirm(`Confirm Result: ${winnerText}? This ends the match.`)) return;
+        showConfirmDialog(
+            "End Match?",
+            `Are you sure you want to end this match with result: ${winnerText}?`,
+            async () => {
+                const { error } = await supabaseClient
+                    .from('matches')
+                    .update({ 
+                        status: 'Completed', 
+                        is_live: false, 
+                        score1: currentScores.s1, 
+                        score2: currentScores.s2,
+                        winner_text: winnerText
+                    })
+                    .eq('id', currentMatchId);
 
-        const { error } = await supabaseClient
-            .from('matches')
-            .update({ 
-                status: 'Completed', 
-                is_live: false, 
-                score1: currentScores.s1, 
-                score2: currentScores.s2,
-                winner_text: winnerText
-            })
-            .eq('id', currentMatchId);
+                if (error) return showToast("Error ending match", "error");
 
-        if (error) return showToast("Error ending match", "error");
-
-        await syncToRealtime(currentMatchId);
-        showToast("Match Ended!", "success");
-        closeModal('modal-scoring');
-        loadMyMatches();
+                await syncToRealtime(currentMatchId);
+                showToast("Match Ended Successfully!", "success");
+                window.closeConfirmModal();
+                window.closeModal('modal-scoring');
+                loadMyMatches();
+            }
+        );
     }
 
     // --- 9. UI COMPONENTS ---
     window.closeModal = (id) => document.getElementById(id).classList.add('hidden');
 
+    // --- CUSTOM CONFIRM MODAL LOGIC ---
+    function setupConfirmModal() {
+        const btnYes = document.getElementById('btn-confirm-yes');
+        const btnCancel = document.getElementById('btn-confirm-cancel');
+        
+        if (btnYes) {
+            btnYes.onclick = () => {
+                if (confirmCallback) confirmCallback();
+            };
+        }
+        
+        if (btnCancel) {
+            btnCancel.onclick = () => window.closeConfirmModal();
+        }
+    }
+
+    window.showConfirmDialog = function(title, msg, onConfirm) {
+        document.getElementById('confirm-title').innerText = title;
+        document.getElementById('confirm-desc').innerText = msg;
+        confirmCallback = onConfirm;
+        document.getElementById('modal-confirm').classList.remove('hidden');
+    }
+
+    window.closeConfirmModal = function() {
+        document.getElementById('modal-confirm').classList.add('hidden');
+        confirmCallback = null;
+    }
+
     function injectScoringModal() {
         if(document.getElementById('modal-scoring')) return;
         const div = document.createElement('div');
         div.id = 'modal-scoring';
-        div.className = 'hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4';
+        div.className = 'hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in';
         div.innerHTML = `
-            <div class="bg-white p-6 rounded-3xl w-full max-w-md shadow-2xl">
+            <div class="bg-white p-6 rounded-[2rem] w-full max-w-md shadow-2xl animate-scale-up">
                 <div class="text-center mb-6">
                     <h3 class="font-black text-2xl text-gray-900">Update Score</h3>
                     <p class="text-xs text-brand-primary font-bold uppercase tracking-wide mt-1 animate-pulse">● Live Broadcasting</p>
@@ -355,27 +400,27 @@
                 <div class="flex items-center justify-between bg-gray-50 p-4 rounded-2xl mb-4 border border-gray-100">
                     <span id="score-t1-name" class="font-bold text-lg text-gray-800 w-1/2 truncate">Team A</span>
                     <div class="flex items-center gap-3">
-                        <button onclick="adjustScore(1, -1)" class="w-10 h-10 bg-white border rounded-full font-bold shadow-sm active:scale-95">-</button>
+                        <button onclick="adjustScore(1, -1)" class="w-10 h-10 bg-white border border-gray-200 rounded-full font-bold shadow-sm active:scale-95 text-gray-600 hover:bg-gray-100 transition-colors">-</button>
                         <span id="score-val-1" class="text-4xl font-black text-brand-primary w-14 text-center">0</span>
-                        <button onclick="adjustScore(1, 1)" class="w-10 h-10 bg-black text-white rounded-full font-bold shadow-lg active:scale-95">+</button>
+                        <button onclick="adjustScore(1, 1)" class="w-10 h-10 bg-black text-white rounded-full font-bold shadow-lg active:scale-95 hover:bg-gray-800 transition-colors">+</button>
                     </div>
                 </div>
 
                 <div class="flex items-center justify-between bg-gray-50 p-4 rounded-2xl mb-6 border border-gray-100">
                     <span id="score-t2-name" class="font-bold text-lg text-gray-800 w-1/2 truncate">Team B</span>
                     <div class="flex items-center gap-3">
-                        <button onclick="adjustScore(2, -1)" class="w-10 h-10 bg-white border rounded-full font-bold shadow-sm active:scale-95">-</button>
+                        <button onclick="adjustScore(2, -1)" class="w-10 h-10 bg-white border border-gray-200 rounded-full font-bold shadow-sm active:scale-95 text-gray-600 hover:bg-gray-100 transition-colors">-</button>
                         <span id="score-val-2" class="text-4xl font-black text-brand-primary w-14 text-center">0</span>
-                        <button onclick="adjustScore(2, 1)" class="w-10 h-10 bg-black text-white rounded-full font-bold shadow-lg active:scale-95">+</button>
+                        <button onclick="adjustScore(2, 1)" class="w-10 h-10 bg-black text-white rounded-full font-bold shadow-lg active:scale-95 hover:bg-gray-800 transition-colors">+</button>
                     </div>
                 </div>
 
                 <div class="mb-6">
                     <label class="block text-xs font-bold text-gray-400 uppercase mb-2 ml-1">Declare Result / Walkover</label>
                     <div class="relative">
-                        <select id="winner-select" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl font-bold text-gray-900 appearance-none outline-none focus:border-brand-primary">
+                        <select id="winner-select" class="w-full p-3.5 bg-gray-50 border border-gray-200 rounded-xl font-bold text-gray-900 appearance-none outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all">
                             </select>
-                        <div class="absolute right-3 top-3 pointer-events-none text-gray-500">
+                        <div class="absolute right-3 top-4 pointer-events-none text-gray-500">
                             <i data-lucide="chevron-down" class="w-5 h-5"></i>
                         </div>
                     </div>
@@ -383,7 +428,7 @@
 
                 <div class="grid grid-cols-2 gap-3 mb-4">
                     <button onclick="endMatch()" class="py-3.5 bg-red-50 text-red-600 font-bold rounded-xl hover:bg-red-100 border border-red-100 transition-colors">End Match</button>
-                    <button id="btn-save-score" onclick="saveScores()" class="py-3.5 bg-black text-white font-bold rounded-xl shadow-lg hover:bg-gray-800 transition-colors">Update Live</button>
+                    <button id="btn-save-score" onclick="saveScores()" class="py-3.5 bg-black text-white font-bold rounded-xl shadow-lg hover:bg-gray-800 transition-colors flex items-center justify-center gap-2">Update Live</button>
                 </div>
                 
                 <button onclick="closeModal('modal-scoring')" class="w-full py-3 text-gray-400 font-bold text-xs uppercase hover:text-gray-600">Cancel</button>
@@ -406,7 +451,7 @@
         const txt = document.getElementById('toast-msg');
         const icon = document.getElementById('toast-icon');
         if(txt) txt.innerText = msg;
-        if(icon) icon.innerHTML = type === 'error' ? '<i data-lucide="alert-triangle"></i>' : '<i data-lucide="check-circle"></i>';
+        if(icon) icon.innerHTML = type === 'error' ? '<i data-lucide="alert-triangle" class="w-5 h-5 text-red-400"></i>' : '<i data-lucide="check-circle" class="w-5 h-5 text-green-400"></i>';
         if(window.lucide) lucide.createIcons();
         if(t) {
             t.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-10');
