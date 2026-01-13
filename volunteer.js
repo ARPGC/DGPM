@@ -2,7 +2,7 @@
 // URJA 2026 - VOLUNTEER SCORING DASHBOARD
 // ==========================================
 
-(function() { // <--- WRAPPED IN IIFE TO PREVENT ERRORS
+(function() { // <--- WRAPPED TO PREVENT "ALREADY DECLARED" ERRORS
 
     // --- 1. CONFIGURATION CHECKS ---
     if (typeof CONFIG === 'undefined' || typeof CONFIG_REALTIME === 'undefined') {
@@ -73,6 +73,7 @@
         loadMyMatches();
     }
 
+    // Assign logout to window so HTML button can access it
     window.volunteerLogout = function() {
         supabaseClient.auth.signOut();
         window.location.href = 'login.html';
@@ -186,7 +187,9 @@
         if(window.lucide) lucide.createIcons();
     }
 
-    // --- 8. MATCH ACTIONS ---
+    // --- 8. MATCH ACTIONS (Exposed to Window) ---
+    
+    // START MATCH
     window.startMatch = async function(matchId) {
         if(!confirm("Start match? It will go LIVE for students.")) return;
 
@@ -202,6 +205,7 @@
         loadMyMatches();
     }
 
+    // SCORING MODAL
     window.openScoring = async function(matchId) {
         currentMatchId = matchId;
         
@@ -234,6 +238,7 @@
         updateScoreDisplay();
     }
 
+    // SAVE BUTTON
     window.saveScores = async function() {
         const btn = document.getElementById('btn-save-score');
         const originalText = btn.innerHTML;
@@ -263,6 +268,7 @@
         loadMyMatches();
     }
 
+    // END MATCH
     window.endMatch = async function() {
         if(!confirm("End match? This is final.")) return;
 
@@ -293,7 +299,7 @@
         loadMyMatches();
     }
 
-    // --- 9. UTILS ---
+    // --- 9. UI COMPONENTS ---
     window.closeModal = (id) => document.getElementById(id).classList.add('hidden');
 
     function injectScoringModal() {
