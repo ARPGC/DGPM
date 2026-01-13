@@ -14,8 +14,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     if(window.lucide) lucide.createIcons();
     injectToastContainer();
     await checkAdminAuth();
-    
-    // Initial Load
     switchView('dashboard');
 });
 
@@ -70,19 +68,16 @@ window.switchView = function(viewId) {
     const titleEl = document.getElementById('page-title');
     if(titleEl) titleEl.innerText = viewId.charAt(0).toUpperCase() + viewId.slice(1);
 
-    // Export Buttons Toggle
     const globalActions = document.getElementById('global-actions');
     if(globalActions) {
         if (['users', 'teams', 'matches'].includes(viewId)) globalActions.classList.remove('hidden');
         else globalActions.classList.add('hidden');
     }
 
-    // Data Loaders
     dataCache = [];
     if(viewId === 'users') loadUsersList();
     if(viewId === 'sports') loadSportsList();
     if(viewId === 'matches') {
-        // Inject Match Filter Tabs if missing
         setupMatchFilters();
         loadMatches('Scheduled');
     }
@@ -121,13 +116,9 @@ async function loadDashboardStats() {
     const { count: regCount } = await supabaseClient.from('registrations').select('*', { count: 'exact', head: true });
     const { count: teamCount } = await supabaseClient.from('teams').select('*', { count: 'exact', head: true });
     
-    const uEl = document.getElementById('dash-total-users');
-    const rEl = document.getElementById('dash-total-regs');
-    const tEl = document.getElementById('dash-total-teams');
-
-    if(uEl) uEl.innerText = userCount || 0;
-    if(rEl) rEl.innerText = regCount || 0;
-    if(tEl) tEl.innerText = teamCount || 0;
+    document.getElementById('dash-total-users').innerText = userCount || 0;
+    document.getElementById('dash-total-regs').innerText = regCount || 0;
+    document.getElementById('dash-total-teams').innerText = teamCount || 0;
 }
 
 // --- 5. SPORTS MANAGEMENT ---
@@ -142,7 +133,7 @@ async function loadSportsList() {
     const { data: activeMatches } = await supabaseClient.from('matches').select('sport_id').neq('status', 'Completed');
     const activeSportIds = activeMatches ? activeMatches.map(m => m.sport_id) : [];
 
-    allSportsCache = sports || []; // Save for volunteer assignment
+    allSportsCache = sports || [];
 
     if(!sports || sports.length === 0) return;
 
@@ -211,7 +202,7 @@ window.toggleSportStatus = async function(id, currentStatus) {
     loadSportsList();
 }
 
-// --- 6. SCHEDULER (ROBUST VERSION) ---
+// --- 6. SCHEDULER & MATCH ACTIONS ---
 
 window.handleScheduleClick = async function(sportId, sportName, isPerformance, sportType) {
     if (isPerformance) {
@@ -221,6 +212,7 @@ window.handleScheduleClick = async function(sportId, sportName, isPerformance, s
     }
 }
 
+// A. Performance Events
 async function initPerformanceEvent(sportId, sportName) {
     const { data: existing } = await supabaseClient.from('matches').select('id').eq('sport_id', sportId).neq('status', 'Completed');
     if (existing && existing.length > 0) return showToast("Event is already active!", "info");
@@ -240,6 +232,44 @@ async function initPerformanceEvent(sportId, sportName) {
     }
 }
 
+window.endPerformanceEvent = async function(matchId) {
+    if (!confirm("Are you sure? This will Calculate Winners and END the event.")) return;
+
+    const { data: match } = await supabaseClient.from('matches').select('performance_data, sports(unit)').eq('id', matchId).single();
+    let arr = match.performance_data;
+    const unit = match.sports.unit;
+
+    let validEntries = arr.filter(p => p.result && p.result.trim() !== '');
+    const isDistance = unit === 'Meters' || unit === 'Points';
+    validEntries.sort((a, b) => {
+        const valA = parseFloat(a.result) || 0;
+        const valB = parseFloat(b.result) || 0;
+        return isDistance ? (valB - valA) : (valA - valB);
+    });
+
+    let winners = { gold: null, silver: null, bronze: null };
+    validEntries.forEach((p, i) => {
+        p.rank = i + 1;
+        if(i === 0) winners.gold = p.name;
+        if(i === 1) winners.silver = p.name;
+        if(i === 2) winners.bronze = p.name;
+    });
+
+    const finalData = [...validEntries, ...arr.filter(p => !p.result || p.result.trim() === '')];
+    const winnerText = `Gold: ${winners.gold || '-'}`;
+
+    const { error } = await supabaseClient.from('matches').update({ performance_data: finalData, status: 'Completed', winner_text: winnerText, winners_data: winners, is_live: false }).eq('id', matchId);
+
+    if(error) showToast("Error: " + error.message, "error");
+    else {
+        showToast("Event Ended!", "success");
+        logAdminAction('END_EVENT', `Ended Match ID ${matchId}`);
+        loadMatches(currentMatchViewFilter); 
+        loadSportsList(); 
+    }
+}
+
+// B. Tournament Scheduler
 async function initTournamentRound(sportId, sportName, sportType) {
     showToast("Analyzing Bracket...", "info");
     const intSportId = parseInt(sportId); 
@@ -250,7 +280,6 @@ async function initTournamentRound(sportId, sportName, sportType) {
     let candidates = [];
 
     if (!latestMatches || latestMatches.length === 0) {
-        // ROUND 1
         if (sportType === 'Individual') await supabaseClient.rpc('prepare_individual_teams', { sport_id_input: intSportId });
         await supabaseClient.rpc('auto_lock_tournament_teams', { sport_id_input: intSportId });
 
@@ -259,7 +288,6 @@ async function initTournamentRound(sportId, sportName, sportType) {
 
         candidates = validTeams.map(t => ({ id: t.team_id, name: t.team_name, category: t.category }));
     } else {
-        // NEXT ROUNDS
         const lastRound = latestMatches[0].round_number;
         const { count: pendingCount } = await supabaseClient.from('matches').select('*', { count: 'exact', head: true }).eq('sport_id', intSportId).eq('round_number', lastRound).neq('status', 'Completed');
 
@@ -364,17 +392,15 @@ async function confirmSchedule(sportId) {
     }
 }
 
-// --- 7. USERS (RESTORED FEATURES: PROMOTE, ASSIGN, RESET) ---
+// --- 7. USERS (PROMOTION & RESET RESTORED) ---
 async function loadUsersList() {
     const tbody = document.getElementById('users-table-body');
     if(!tbody) return;
     tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center">Loading...</td></tr>';
     
-    // Fetch users and sports for assignment
     const { data: users } = await supabaseClient.from('users').select('*').order('created_at', { ascending: false });
     const { data: sports } = await supabaseClient.from('sports').select('id, name');
 
-    // Populate Export Cache
     dataCache = users.map(u => ({ Name: `${u.first_name} ${u.last_name}`, Email: u.email, Role: u.role, Class: u.class_name, Mobile: u.mobile }));
 
     tbody.innerHTML = users.map(u => {
@@ -393,7 +419,7 @@ async function loadUsersList() {
             
             <td class="p-4">
                 ${u.role === 'volunteer' ? 
-                    `<select onchange="assignVolunteerSport('${u.id}', this.value)" class="p-1 text-xs border rounded bg-white">
+                    `<select onchange="assignVolunteerSport('${u.id}', this.value)" class="p-1 text-xs border rounded bg-white w-full">
                         <option value="">-- Assign Sport --</option>
                         ${sportOptions}
                     </select>` 
@@ -404,7 +430,7 @@ async function loadUsersList() {
                 ${u.role !== 'admin' && u.role !== 'volunteer' ? 
                     `<button onclick="promoteUser('${u.id}')" class="text-xs bg-indigo-50 text-indigo-600 px-3 py-1 rounded-lg font-bold hover:bg-indigo-100">Make Vol</button>` : ''}
                 
-                <button onclick="resetUserPassword('${u.id}', '${u.first_name}')" class="text-xs bg-red-50 text-red-600 px-3 py-1 rounded-lg font-bold hover:bg-red-100 border border-red-100">Reset Pass</button>
+                <button onclick="resetUserPassword('${u.id}', '${u.first_name}')" class="text-xs bg-red-50 text-red-600 px-3 py-1 rounded-lg font-bold hover:bg-red-100 border border-red-100">Reset</button>
             </td>
         </tr>
     `}).join('');
@@ -488,7 +514,7 @@ window.viewTeamSquad = async function(teamId, teamName) {
     alert(msg);
 }
 
-// --- 9. MATCHES (FILTERS RESTORED) ---
+// --- 9. MATCHES (FILTERS & ACTIONS RESTORED) ---
 function setupMatchFilters() {
     const container = document.getElementById('view-matches');
     if(!document.getElementById('match-filter-tabs')) {
@@ -507,13 +533,9 @@ function setupMatchFilters() {
 window.loadMatches = async function(statusFilter = 'Scheduled') {
     currentMatchViewFilter = statusFilter;
     
-    // Update Tab Styles
     document.querySelectorAll('#match-filter-tabs button').forEach(btn => {
-        if(btn.innerText === statusFilter) {
-            btn.className = "px-4 py-2 text-sm font-bold text-black border-b-2 border-black";
-        } else {
-            btn.className = "px-4 py-2 text-sm font-bold text-gray-500 hover:text-black";
-        }
+        if(btn.innerText === statusFilter) btn.className = "px-4 py-2 text-sm font-bold text-black border-b-2 border-black";
+        else btn.className = "px-4 py-2 text-sm font-bold text-gray-500 hover:text-black";
     });
 
     const container = document.getElementById('matches-grid');
@@ -539,14 +561,40 @@ window.loadMatches = async function(statusFilter = 'Scheduled') {
                  </div>
                  <span class="text-xs text-gray-500 font-bold uppercase tracking-wider">${m.sports.name}</span>
             </div>
-            <div class="flex items-center justify-between w-full mb-4 px-2">
-                <h4 class="font-bold text-lg text-gray-900 leading-tight text-left w-1/3 truncate">${m.team1_name}</h4>
-                <span class="text-[10px] font-bold text-gray-300 px-2">VS</span>
-                <h4 class="font-bold text-lg text-gray-900 leading-tight text-right w-1/3 truncate">${m.team2_name}</h4>
+            
+            ${m.sports.is_performance ? 
+                `<div class="text-center py-2"><h4 class="font-black text-xl text-gray-900">${m.team1_name}</h4><p class="text-xs text-gray-400 font-bold uppercase">Performance Event</p></div>`
+            : 
+                `<div class="flex items-center justify-between w-full mb-4 px-2">
+                    <h4 class="font-bold text-lg text-gray-900 leading-tight text-left w-1/3 truncate">${m.team1_name}</h4>
+                    <span class="text-[10px] font-bold text-gray-300 px-2">VS</span>
+                    <h4 class="font-bold text-lg text-gray-900 leading-tight text-right w-1/3 truncate">${m.team2_name}</h4>
+                </div>`
+            }
+
+            <div class="border-t border-gray-100 pt-4 flex items-center justify-between gap-3">
+                 <div class="text-xs font-bold text-gray-400 flex items-center gap-1"><i data-lucide="map-pin" class="w-3 h-3"></i> ${m.location || 'N/A'}</div>
+                 <div>
+                    ${m.sports.is_performance && m.status === 'Live' ? 
+                        `<button onclick="endPerformanceEvent('${m.id}')" class="px-3 py-1.5 bg-red-500 text-white text-xs font-bold rounded-lg hover:bg-red-600 shadow-sm">End Event</button>`
+                    : 
+                        m.status === 'Scheduled' ? 
+                            `<button onclick="startMatch('${m.id}')" class="px-3 py-1.5 bg-green-500 text-white text-xs font-bold rounded-lg hover:bg-green-600 shadow-sm">Start Match</button>` 
+                        : `<span class="text-xs font-bold text-gray-400 bg-gray-100 px-2 py-1 rounded border border-gray-200">${m.winner_text || 'Completed'}</span>`
+                    }
+                 </div>
             </div>
-            ${m.status === 'Completed' ? `<div class="mt-2 pt-2 border-t text-center text-xs font-bold text-green-600">${m.winner_text || 'Completed'}</div>` : ''}
         </div>
     `).join('');
+    if(window.lucide) lucide.createIcons();
+}
+
+window.startMatch = async function(matchId) {
+    if(!confirm("Start this match now? It will appear as LIVE.")) return;
+    await supabaseClient.from('matches').update({ status: 'Live', is_live: true }).eq('id', matchId);
+    showToast("Match is now LIVE!", "success");
+    loadMatches('Live');
+    loadSportsList();
 }
 
 // --- UTILS ---
