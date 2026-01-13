@@ -13,10 +13,8 @@ const DEFAULT_AVATAR = "https://t4.ftcdn.net/jpg/05/89/93/27/360_F_589932782_vQA
 document.addEventListener('DOMContentLoaded', async () => {
     if(window.lucide) lucide.createIcons();
     injectToastContainer();
-    
-    // Ensure Modal HTML exists for Scheduler
-    injectScheduleModal();
-
+    injectScheduleModal(); // Ensure Modals Exist
+    injectWinnerModal();   // New: Manual Winner Declaration
     await checkAdminAuth();
     switchView('dashboard');
 });
@@ -37,7 +35,7 @@ async function checkAdminAuth() {
     loadDashboardStats();
 }
 
-// CENTRAL LOGGING FUNCTION
+// CENTRAL LOGGING FUNCTION (Requested Feature)
 async function logAdminAction(action, details) {
     console.log(`[ADMIN LOG] ${action}: ${details}`);
     try {
@@ -47,7 +45,7 @@ async function logAdminAction(action, details) {
             details: details
         });
     } catch (err) {
-        console.error("Logging failed:", err);
+        console.error("Logging failed (Non-fatal):", err);
     }
 }
 
@@ -127,9 +125,13 @@ async function loadDashboardStats() {
     const { count: regCount } = await supabaseClient.from('registrations').select('*', { count: 'exact', head: true });
     const { count: teamCount } = await supabaseClient.from('teams').select('*', { count: 'exact', head: true });
     
-    document.getElementById('dash-total-users').innerText = userCount || 0;
-    document.getElementById('dash-total-regs').innerText = regCount || 0;
-    document.getElementById('dash-total-teams').innerText = teamCount || 0;
+    const uEl = document.getElementById('dash-total-users');
+    const rEl = document.getElementById('dash-total-regs');
+    const tEl = document.getElementById('dash-total-teams');
+
+    if(uEl) uEl.innerText = userCount || 0;
+    if(rEl) rEl.innerText = regCount || 0;
+    if(tEl) tEl.innerText = teamCount || 0;
 }
 
 // --- 5. SPORTS MANAGEMENT ---
@@ -154,14 +156,19 @@ async function loadSportsList() {
     sports.forEach(s => {
         const isStarted = activeSportIds.includes(s.id);
         
+        // ACTION BUTTON LOGIC
         let actionBtn = '';
         if (isStarted) {
              actionBtn = `<span class="text-xs font-bold text-green-600 bg-green-50 px-3 py-1 rounded-lg border border-green-100 flex items-center gap-1 w-max ml-auto"><i data-lucide="activity" class="w-3 h-3"></i> Active</span>`;
         } else {
+             // If not active, allows scheduling OR Force Winner (New Feature)
              actionBtn = `
-                <button onclick="window.handleScheduleClick('${s.id}', '${s.name}', ${s.is_performance}, '${s.type}')" class="px-4 py-1.5 bg-black text-white rounded-lg text-xs font-bold hover:bg-gray-800 shadow-sm transition-transform active:scale-95 ml-auto block">
-                    ${s.is_performance ? 'Start Event' : 'Schedule Round'}
-                </button>`;
+                <div class="flex gap-2 justify-end">
+                    <button onclick="window.handleScheduleClick('${s.id}', '${s.name}', ${s.is_performance}, '${s.type}')" class="px-4 py-1.5 bg-black text-white rounded-lg text-xs font-bold hover:bg-gray-800 shadow-sm transition-transform active:scale-95">
+                        ${s.is_performance ? 'Start Event' : 'Schedule Round'}
+                    </button>
+                    ${!s.is_performance ? `<button onclick="openForceWinnerModal('${s.id}', '${s.name}')" class="px-2 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold hover:bg-indigo-100" title="Manual Winner"><i data-lucide="crown" class="w-4 h-4"></i></button>` : ''}
+                </div>`;
         }
         
         const closeBtn = `<button onclick="toggleSportStatus('${s.id}', '${s.status}')" class="text-xs font-bold underline text-gray-400 hover:text-gray-600 transition-colors">${s.status === 'Open' ? 'Close Reg' : 'Open Reg'}</button>`;
@@ -214,7 +221,7 @@ window.toggleSportStatus = async function(id, currentStatus) {
     loadSportsList();
 }
 
-// --- 6. TOURNAMENT & MATCH SCHEDULER ---
+// --- 6. SCHEDULER & MATCH ACTIONS ---
 
 window.handleScheduleClick = async function(sportId, sportName, isPerformance, sportType) {
     if (isPerformance) {
@@ -241,6 +248,43 @@ async function initPerformanceEvent(sportId, sportName) {
         showToast(`${sportName} started!`, "success");
         logAdminAction('START_EVENT', `Started Performance Event: ${sportName}`);
         loadSportsList();
+    }
+}
+
+window.endPerformanceEvent = async function(matchId) {
+    if (!confirm("Are you sure? This will Calculate Winners and END the event.")) return;
+
+    const { data: match } = await supabaseClient.from('matches').select('performance_data, sports(unit)').eq('id', matchId).single();
+    let arr = match.performance_data;
+    const unit = match.sports.unit;
+
+    let validEntries = arr.filter(p => p.result && p.result.trim() !== '');
+    const isDistance = unit === 'Meters' || unit === 'Points';
+    validEntries.sort((a, b) => {
+        const valA = parseFloat(a.result) || 0;
+        const valB = parseFloat(b.result) || 0;
+        return isDistance ? (valB - valA) : (valA - valB);
+    });
+
+    let winners = { gold: null, silver: null, bronze: null };
+    validEntries.forEach((p, i) => {
+        p.rank = i + 1;
+        if(i === 0) winners.gold = p.name;
+        if(i === 1) winners.silver = p.name;
+        if(i === 2) winners.bronze = p.name;
+    });
+
+    const finalData = [...validEntries, ...arr.filter(p => !p.result || p.result.trim() === '')];
+    const winnerText = `Gold: ${winners.gold || '-'}`;
+
+    const { error } = await supabaseClient.from('matches').update({ performance_data: finalData, status: 'Completed', winner_text: winnerText, winners_data: winners, is_live: false }).eq('id', matchId);
+
+    if(error) showToast("Error: " + error.message, "error");
+    else {
+        showToast("Event Ended!", "success");
+        logAdminAction('END_EVENT', `Ended Match ID ${matchId}`);
+        loadMatches(currentMatchViewFilter); 
+        loadSportsList(); 
     }
 }
 
@@ -273,7 +317,11 @@ async function initTournamentRound(sportId, sportName, sportType) {
         round = lastRound + 1;
         const { data: winners } = await supabaseClient.from('matches').select('winner_id').eq('sport_id', intSportId).eq('round_number', lastRound).not('winner_id', 'is', null);
 
-        if (!winners || winners.length < 2) return showToast("Tournament Completed! (Winner Declared)", "success");
+        if (!winners || winners.length < 2) {
+            // AUTO-DETECT WINNER IF < 2
+            showToast("Tournament Completed! (Winner Declared)", "success");
+            return;
+        }
 
         const winnerIds = winners.map(w => w.winner_id);
         const { data: teamDetails } = await supabaseClient.from('teams').select(`id, name, captain:users!captain_id(class_name)`).in('id', winnerIds);
@@ -284,9 +332,12 @@ async function initTournamentRound(sportId, sportName, sportType) {
     }
 
     tempSchedule = [];
+    
+    // SMART MATCH TYPING (Crucial for Student View)
     let matchType = 'Regular';
     if (candidates.length === 2) matchType = 'Final';
     else if (candidates.length <= 4) matchType = 'Semi-Final';
+    else if (candidates.length <= 8) matchType = 'Quarter-Final';
 
     if (candidates.length <= 4) {
         // Merge Pools for Semi/Finals
@@ -306,6 +357,7 @@ async function initTournamentRound(sportId, sportName, sportType) {
 function generatePairsFromList(list, round, matchType) {
     if (list.length % 2 !== 0) {
         const luckyTeam = list.pop(); 
+        // Note: Bye Round doesn't need to be 'Final' even if it's the last one, the next real match will be.
         tempSchedule.push({ t1: luckyTeam, t2: { id: null, name: "BYE (Auto-Advance)" }, time: "10:00", location: "N/A", round: round, type: 'Bye Round' });
     }
     for (let i = 0; i < list.length; i += 2) {
@@ -314,13 +366,13 @@ function generatePairsFromList(list, round, matchType) {
 }
 
 function openSchedulePreviewModal(sportName, round, schedule, sportId) {
-    // FIX: Ensure ID exists or alert (Prevents NULL error)
     const titleEl = document.getElementById('preview-subtitle');
     const container = document.getElementById('schedule-preview-list');
     
+    // Safety check for DOM elements
     if(!titleEl || !container) {
-        console.error("Missing Modal DOM Elements. Injecting now...");
-        injectScheduleModal(); // Retry
+        console.error("DOM missing. Re-injecting modal.");
+        injectScheduleModal();
         setTimeout(() => openSchedulePreviewModal(sportName, round, schedule, sportId), 100);
         return;
     }
@@ -340,7 +392,9 @@ function openSchedulePreviewModal(sportName, round, schedule, sportId) {
             ${m.t2.id ? `
             <div class="flex gap-2 w-full md:w-auto">
                 <input type="time" class="input-field p-2 w-full md:w-24 bg-gray-50 border rounded-lg text-sm font-bold" value="${m.time}" onchange="updateTempSchedule(${idx}, 'time', this.value)">
-                <select class="input-field p-2 w-full md:w-40 bg-gray-50 border rounded-lg text-sm font-bold" onchange="updateTempSchedule(${idx}, 'location', this.value)">${venueOptions}</select>
+                <select class="input-field p-2 w-full md:w-40 bg-gray-50 border rounded-lg text-sm font-bold" onchange="updateTempSchedule(${idx}, 'location', this.value)">
+                    ${venueOptions}
+                </select>
             </div>` : `<span class="text-xs font-bold text-green-500 bg-green-50 px-2 py-1 rounded">Walkover</span>`}
         </div>
     `).join('');
@@ -382,22 +436,51 @@ async function confirmSchedule(sportId) {
     }
 }
 
-// --- 7. MATCH MANAGEMENT (Tabs & Actions) ---
+// --- 7. NEW FEATURE: MANUAL WINNER DECLARATION (Fixes "Not Showing" Issue) ---
+async function openForceWinnerModal(sportId, sportName) {
+    // 1. Get Teams
+    const { data: teams } = await supabaseClient.from('teams').select('id, name').eq('sport_id', sportId);
+    if(!teams || teams.length === 0) return showToast("No teams in this sport", "error");
 
-function setupMatchFilters() {
-    const container = document.getElementById('view-matches');
-    if(!document.getElementById('match-filter-tabs')) {
-        const div = document.createElement('div');
-        div.id = 'match-filter-tabs';
-        div.className = "flex gap-2 mb-6 border-b border-gray-200 pb-2";
-        div.innerHTML = `
-            <button onclick="loadMatches('Scheduled')" id="btn-filter-scheduled" class="px-4 py-2 text-sm font-bold text-gray-500 hover:text-black transition-colors">Scheduled</button>
-            <button onclick="loadMatches('Live')" id="btn-filter-live" class="px-4 py-2 text-sm font-bold text-gray-500 hover:text-black transition-colors">Live</button>
-            <button onclick="loadMatches('Completed')" id="btn-filter-completed" class="px-4 py-2 text-sm font-bold text-gray-500 hover:text-black transition-colors">Completed</button>
-        `;
-        container.insertBefore(div, document.getElementById('matches-grid'));
+    const container = document.getElementById('force-winner-select');
+    container.innerHTML = teams.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+    
+    // 2. Set Button Action
+    document.getElementById('btn-confirm-winner').onclick = () => confirmForceWinner(sportId, sportName);
+    
+    // 3. Show Modal
+    document.getElementById('modal-force-winner').classList.remove('hidden');
+}
+
+async function confirmForceWinner(sportId, sportName) {
+    const teamId = document.getElementById('force-winner-select').value;
+    const teamName = document.getElementById('force-winner-select').options[document.getElementById('force-winner-select').selectedIndex].text;
+
+    if(!confirm(`Declare ${teamName} as the FINAL WINNER of ${sportName}? This will appear on Student Portal.`)) return;
+
+    // INSERT A DUMMY "FINAL" MATCH TO RECORD THE WINNER
+    const { error } = await supabaseClient.from('matches').insert({
+        sport_id: sportId,
+        team1_name: teamName,
+        team2_name: "TBD",
+        start_time: new Date().toISOString(),
+        location: "N/A",
+        round_number: 99, // High number to indicate finality
+        status: 'Completed',
+        match_type: 'Final', // KEY: Student Portal looks for 'Final'
+        winner_id: teamId,
+        winner_text: `CHAMPION: ${teamName}`
+    });
+
+    if(error) showToast("Error: " + error.message, "error");
+    else {
+        showToast("Winner Declared Successfully!", "success");
+        logAdminAction('FORCE_WINNER', `Manually declared ${teamName} as winner for ${sportName}`);
+        closeModal('modal-force-winner');
     }
 }
+
+// --- 8. MATCH MANAGEMENT ---
 
 window.loadMatches = async function(statusFilter = 'Scheduled') {
     currentMatchViewFilter = statusFilter;
@@ -464,9 +547,10 @@ window.startMatch = async function(matchId) {
     showToast("Match is now LIVE!", "success");
     logAdminAction('MATCH_START', `Started match ID ${matchId}`);
     loadMatches('Live');
+    loadSportsList();
 }
 
-// --- 8. USERS (Promote, Assign, Reset, Search) ---
+// --- 9. USERS (PROMOTION & RESET) ---
 async function loadUsersList() {
     const tbody = document.getElementById('users-table-body');
     if(!tbody) return;
@@ -530,7 +614,7 @@ window.filterUsers = function() {
     });
 }
 
-// --- 9. ACTIVITY LOGS ---
+// --- 10. ACTIVITY LOGS ---
 async function loadActivityLogs() {
     const tbody = document.getElementById('logs-table-body');
     if(!tbody) return;
@@ -551,7 +635,7 @@ async function loadActivityLogs() {
     }
 }
 
-// --- 10. TEAMS ---
+// --- 11. TEAMS ---
 async function loadTeamsList() {
     const grid = document.getElementById('teams-grid');
     if(!grid) return;
@@ -598,8 +682,60 @@ window.viewTeamSquad = async function(teamId, teamName) {
     alert(msg);
 }
 
-// --- UTILS ---
+// --- UTILS & INJECTORS ---
 window.closeModal = (id) => document.getElementById(id).classList.add('hidden');
+
+// Match Filters Injection
+function setupMatchFilters() {
+    const container = document.getElementById('view-matches');
+    if(!document.getElementById('match-filter-tabs')) {
+        const div = document.createElement('div');
+        div.id = 'match-filter-tabs';
+        div.className = "flex gap-2 mb-6 border-b border-gray-200 pb-2";
+        div.innerHTML = `
+            <button onclick="loadMatches('Scheduled')" id="btn-filter-scheduled" class="px-4 py-2 text-sm font-bold text-gray-500 hover:text-black transition-colors">Scheduled</button>
+            <button onclick="loadMatches('Live')" id="btn-filter-live" class="px-4 py-2 text-sm font-bold text-gray-500 hover:text-black transition-colors">Live</button>
+            <button onclick="loadMatches('Completed')" id="btn-filter-completed" class="px-4 py-2 text-sm font-bold text-gray-500 hover:text-black transition-colors">Completed</button>
+        `;
+        container.insertBefore(div, document.getElementById('matches-grid'));
+    }
+}
+
+// Modal Injections
+function injectScheduleModal() {
+    if(document.getElementById('modal-schedule-preview')) return;
+    const div = document.createElement('div');
+    div.id = 'modal-schedule-preview';
+    div.className = 'hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm';
+    div.innerHTML = `
+        <div class="bg-white p-6 rounded-2xl w-full max-w-2xl max-h-[80vh] overflow-y-auto m-4">
+            <div class="flex justify-between items-center mb-6">
+                <div><h3 class="font-bold text-xl">Schedule Preview</h3><p id="preview-subtitle" class="text-sm text-gray-500">Generating...</p></div>
+                <button onclick="closeModal('modal-schedule-preview')" class="p-2 bg-gray-100 rounded-full"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div id="schedule-preview-list" class="space-y-3 mb-6"></div>
+            <button id="btn-confirm-schedule" class="w-full py-3 bg-black text-white font-bold rounded-xl shadow-lg">Confirm & Publish</button>
+        </div>`;
+    document.body.appendChild(div);
+}
+
+function injectWinnerModal() {
+    if(document.getElementById('modal-force-winner')) return;
+    const div = document.createElement('div');
+    div.id = 'modal-force-winner';
+    div.className = 'hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm';
+    div.innerHTML = `
+        <div class="bg-white p-6 rounded-2xl w-96">
+            <h3 class="font-bold text-lg mb-4">Declare Manual Winner</h3>
+            <p class="text-xs text-gray-500 mb-4">Use this only if the tournament flow is stuck. This forces a final result.</p>
+            <select id="force-winner-select" class="w-full p-2 border rounded-lg mb-4 text-sm font-bold"></select>
+            <div class="flex gap-2">
+                <button onclick="closeModal('modal-force-winner')" class="flex-1 py-2 bg-gray-100 rounded-lg text-sm font-bold">Cancel</button>
+                <button id="btn-confirm-winner" class="flex-1 py-2 bg-black text-white rounded-lg text-sm font-bold">Confirm</button>
+            </div>
+        </div>`;
+    document.body.appendChild(div);
+}
 
 function injectToastContainer() {
     if(!document.getElementById('toast-container')) {
@@ -624,27 +760,4 @@ function showToast(msg, type) {
         t.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-10');
         setTimeout(() => t.classList.add('opacity-0', 'pointer-events-none', 'translate-y-10'), 3000);
     }
-}
-
-// **CRITICAL FIX**: Dynamically inject Schedule Modal HTML if missing
-function injectScheduleModal() {
-    if(document.getElementById('modal-schedule-preview')) return;
-    
-    const div = document.createElement('div');
-    div.id = 'modal-schedule-preview';
-    div.className = 'hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm';
-    div.innerHTML = `
-        <div class="bg-white p-6 rounded-2xl w-full max-w-2xl max-h-[80vh] overflow-y-auto m-4">
-            <div class="flex justify-between items-center mb-6">
-                <div>
-                    <h3 class="font-bold text-xl">Schedule Preview</h3>
-                    <p id="preview-subtitle" class="text-sm text-gray-500">Generating...</p>
-                </div>
-                <button onclick="closeModal('modal-schedule-preview')" class="p-2 bg-gray-100 rounded-full"><i data-lucide="x" class="w-5 h-5"></i></button>
-            </div>
-            <div id="schedule-preview-list" class="space-y-3 mb-6"></div>
-            <button id="btn-confirm-schedule" class="w-full py-3 bg-black text-white font-bold rounded-xl shadow-lg">Confirm & Publish</button>
-        </div>
-    `;
-    document.body.appendChild(div);
 }
