@@ -670,7 +670,7 @@ async function loadRegistrationsList() {
     if(!tbody) return;
     tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center">Loading registrations...</td></tr>';
 
-    // FIX: Removed 'status' field to prevent 400 Error
+    // FIXED QUERY: Removed 'status'
     const { data: regs, error } = await supabaseClient
         .from('registrations')
         .select(`
@@ -684,6 +684,8 @@ async function loadRegistrationsList() {
         console.error(error);
         return showToast("Failed to load registrations", "error");
     }
+    
+    // ... rest of the function remains the same ...
 
     // Flatten Data
     allRegistrationsCache = regs.map(r => ({
