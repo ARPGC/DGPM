@@ -655,7 +655,7 @@ function setupRealtimeSubscription() {
         }
     }
 
-    window.loadTeamMarketplace = async function() {
+    async function loadTeamMarketplace() {
         const container = document.getElementById('marketplace-list');
         container.innerHTML = '<p class="text-center text-gray-400 py-10">Scanning available squads...</p>';
 
@@ -728,6 +728,7 @@ function setupRealtimeSubscription() {
             </div>
         `}).join('');
     }
+window.loadTeamMarketplace = loadTeamMarketplace;
 
     function checkGenderEligibility(sportName, sportType) {
         if (sportType === 'Team') {
