@@ -349,31 +349,45 @@ window.realtimeClient = window.supabase.createClient(CONFIG_REALTIME.url, CONFIG
         `}).join('');
     }
 
-    // --- 5. REALTIME SUBSCRIPTION ---
+    // --- 5. REALTIME SUBSCRIPTION (UPDATED) ---
     function setupRealtimeSubscription() {
-    if (window.liveSubscription) return; 
+        if (window.liveSubscription) return; 
 
-    window.liveSubscription = window.realtimeClient
-        .channel('public:live_matches')
-        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'live_matches' }, (payload) => {
-            console.log("Change detected!", payload.new);
+        window.liveSubscription = window.realtimeClient
+            .channel('public:urja_updates') // Single channel for all updates
             
-            // 1. Refresh the Live Matches UI immediately
-            loadLiveMatches(); 
-            
-            // 2. If the user has a match details modal open, update it too
-            const modal = document.getElementById('modal-match-details');
-            if (modal && !modal.classList.contains('hidden')) {
-                window.openMatchDetails(payload.new.id);
-            }
+            // 1. LISTENER FOR TOP DASHBOARD (Live Cards)
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'live_matches' }, (payload) => {
+                // Refresh Dashboard Cards
+                loadLiveMatches(); 
+                
+                // If a match details modal is open, update it live
+                const modal = document.getElementById('modal-match-details');
+                if (modal && !modal.classList.contains('hidden')) {
+                    // Only update if the open modal matches the updated game
+                    // (Optional check, but safe to just reload)
+                    window.openMatchDetails(payload.new.id);
+                }
 
-            if (payload.new.status === 'Completed') {
-                loadLatestChampions();
-                showToast(`🏆 Result: ${payload.new.sport_name} finished!`);
-            }
-        })
-        .subscribe();
-}
+                if (payload.new.status === 'Completed') {
+                    loadLatestChampions();
+                    showToast(`🏆 Result: ${payload.new.sport_name} finished!`);
+                }
+            })
+
+            // 2. NEW LISTENER FOR SCHEDULE LIST (All Scores)
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches' }, (payload) => {
+                console.log("Score Update Detected:", payload.new);
+                
+                // Trigger a reload of the schedule list.
+                // This fetches the latest data (including scores) and re-renders the cards.
+                if (typeof window.loadSchedule === 'function') {
+                    window.loadSchedule();
+                }
+            })
+            
+            .subscribe();
+    }
 
     // --- 6. SCHEDULE MODULE (SEARCH & FILTER FIXED) ---
    window.filterSchedule = function(view) {
