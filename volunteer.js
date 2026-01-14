@@ -2,7 +2,7 @@
 // URJA 2026 - VOLUNTEER CONTROLLER
 // ==========================================
 
-(function() {
+(function() { // IIFE Wrapper
 
     // --- CONFIGURATION ---
     if (typeof CONFIG === 'undefined' || typeof CONFIG_REALTIME === 'undefined') {
@@ -17,6 +17,7 @@
     let currentSportId = null;
     let allMatchesCache = []; 
     let currentLiveMatchId = null; 
+    let confirmCallback = null; // Global callback for the modal
 
     // --- INITIALIZATION ---
     document.addEventListener('DOMContentLoaded', async () => {
@@ -50,8 +51,8 @@
             .single();
 
         if (!user || user.role !== 'volunteer') {
-            alert("Access Denied");
-            window.location.href = 'login.html';
+            showToast("Access Denied: Volunteers Only", "error");
+            setTimeout(() => window.location.href = 'login.html', 2000);
             return;
         }
 
@@ -66,20 +67,22 @@
         if(currentSportId) loadAssignedMatches();
     }
 
-    window.logout = () => { supabaseClient.auth.signOut(); window.location.href = 'login.html'; };
+    window.logout = function() {
+        showConfirmDialog("Logout?", "Are you sure you want to sign out?", () => {
+            supabaseClient.auth.signOut();
+            window.location.href = 'login.html';
+        });
+    }
 
     // --- REALTIME SYNC ---
     async function syncToRealtime(matchId) {
         const { data: match } = await supabaseClient.from('matches').select('*, sports(name)').eq('id', matchId).single();
         if(!match) return;
 
-        // Use score_details text for display if available (Cricket), else standard score
-        let score1Display = match.score1;
-        let score2Display = match.score2;
-
+        let s1 = match.score1, s2 = match.score2;
         if (match.score_details) {
-            score1Display = match.score_details.team1_display || match.score1;
-            score2Display = match.score_details.team2_display || match.score2;
+            s1 = match.score_details.team1_display || s1;
+            s2 = match.score_details.team2_display || s2;
         }
 
         const payload = {
@@ -87,15 +90,15 @@
             sport_name: match.sports?.name || 'Unknown',
             team1_name: match.team1_name,
             team2_name: match.team2_name,
-            score1: score1Display, // Can be string for Cricket
-            score2: score2Display, // Can be string for Cricket
+            score1: s1,
+            score2: s2,
             status: match.status,
             is_live: match.is_live,
             round_number: match.round_number,
             match_type: match.match_type,
             winner_text: match.winner_text,
             performance_data: match.performance_data,
-            score_details: match.score_details, // Sync full details
+            score_details: match.score_details,
             updated_at: new Date()
         };
 
@@ -109,7 +112,7 @@
 
         const { data: matches } = await supabaseClient
             .from('matches')
-            .select('*, sports(name, unit)') // Need Name for Cricket check
+            .select('*, sports(name, unit)')
             .eq('sport_id', currentSportId)
             .neq('status', 'Completed') 
             .order('start_time', { ascending: true });
@@ -129,7 +132,7 @@
         const container = document.getElementById('matches-container');
         if(!container) return;
         if (!matches || matches.length === 0) {
-            container.innerHTML = '<p class="text-center text-gray-400 py-8">No active matches.</p>';
+            container.innerHTML = '<p class="text-center text-gray-400 py-8">No active matches found.</p>';
             return;
         }
 
@@ -178,7 +181,6 @@
         if (match.performance_data && Array.isArray(match.performance_data)) {
             content.innerHTML = generatePerformanceHTML(match);
         } else {
-            // CHECK FOR CRICKET
             const isCricket = match.sports?.name.toLowerCase().includes('cricket');
             if (isCricket) {
                 content.innerHTML = generateCricketHTML(match);
@@ -186,7 +188,7 @@
                 content.innerHTML = generateStandardHTML(match);
             }
         }
-        lucide.createIcons();
+        if(window.lucide) lucide.createIcons();
     }
 
     // --- A. PERFORMANCE UI ---
@@ -221,7 +223,7 @@
             </div>`;
     }
 
-    // --- B. CRICKET UI (NEW) ---
+    // --- B. CRICKET UI ---
     function generateCricketHTML(match) {
         const d = match.score_details || { t1: {}, t2: {} };
         
@@ -273,7 +275,7 @@
             <h4 class="font-black text-xl text-center text-gray-900 dark:text-white leading-tight mb-4 line-clamp-1">${name}</h4>
             <span class="text-6xl font-black text-${color} tracking-tighter mb-6">${score}</span>
             <div class="flex gap-4">
-                <button onclick="window.updateScore('${match.id}', 'score${teamNum}', -1, ${score})" class="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-gray-700 text-gray-400 text-3xl font-bold flex items-center justify-center active:scale-90 transition-transform">-</button>
+                <button onclick="window.updateScore('${match.id}', 'score${teamNum}', -1, ${score})" class="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-gray-700 text-gray-400 text-3xl font-bold flex items-center justify-center active:scale-90 transition-transform hover:bg-gray-200 dark:hover:bg-gray-600">-</button>
                 <button onclick="window.updateScore('${match.id}', 'score${teamNum}', 1, ${score})" class="w-16 h-16 rounded-2xl bg-${color} text-white text-3xl font-bold flex items-center justify-center shadow-lg active:scale-90 transition-transform">+</button>
             </div>
         </div>`;
@@ -305,22 +307,16 @@
             t2: { runs: getVal('cricket-t2-runs'), wickets: getVal('cricket-t2-wkts'), overs: getVal('cricket-t2-over') }
         };
 
-        // Format for display string: "55/1 (5.2)"
         details.team1_display = `${details.t1.runs}/${details.t1.wickets} (${details.t1.overs})`;
         details.team2_display = `${details.t2.runs}/${details.t2.wickets} (${details.t2.overs})`;
 
-        const { error } = await supabaseClient
-            .from('matches')
-            .update({ score_details: details })
-            .eq('id', matchId);
+        const { error } = await supabaseClient.from('matches').update({ score_details: details }).eq('id', matchId);
 
         if (error) showToast("Save Failed", "error");
         else {
             showToast("Scoreboard Updated!", "success");
-            // Update local cache manually for speed
             const match = allMatchesCache.find(m => m.id === matchId);
             if(match) match.score_details = details;
-            
             syncToRealtime(matchId);
         }
     }
@@ -328,12 +324,10 @@
     window.saveSingleResult = async function(matchId, idx) {
         const input = document.getElementById(`perf-input-${idx}`);
         if(!input) return;
-        
         const match = allMatchesCache.find(m => m.id === matchId);
         if(!match) return;
 
         match.performance_data[idx].result = input.value;
-
         const { error } = await supabaseClient.from('matches').update({ performance_data: match.performance_data }).eq('id', matchId);
         
         if(error) showToast("Save Failed", "error");
@@ -353,8 +347,8 @@
         msg.innerText = "Select the winner (the team that is present).";
         
         btnContainer.innerHTML = `
-            <button onclick="confirmWalkover('${matchId}', '${t1}')" class="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl text-xs truncate px-2">${t1}</button>
-            <button onclick="confirmWalkover('${matchId}', '${t2}')" class="flex-1 py-3 bg-pink-600 text-white font-bold rounded-xl text-xs truncate px-2">${t2}</button>
+            <button onclick="window.confirmWalkover('${matchId}', '${t1}')" class="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl text-xs truncate px-2">${t1}</button>
+            <button onclick="window.confirmWalkover('${matchId}', '${t2}')" class="flex-1 py-3 bg-pink-600 text-white font-bold rounded-xl text-xs truncate px-2">${t2}</button>
         `;
         
         modal.classList.remove('hidden');
@@ -383,13 +377,16 @@
     }
 
     window.startMatch = async function(matchId) {
-        const { error } = await supabaseClient.from('matches').update({ status: 'Live', is_live: true }).eq('id', matchId);
-        if(!error) {
-            showToast("Match Live!", "success");
-            syncToRealtime(matchId);
-            loadAssignedMatches();
-            openMatchPanel(matchId);
-        }
+        showConfirmDialog("Start Match?", "It will be visible on Live Boards.", async () => {
+            document.getElementById('modal-confirm').classList.add('hidden');
+            const { error } = await supabaseClient.from('matches').update({ status: 'Live', is_live: true }).eq('id', matchId);
+            if(!error) {
+                showToast("Match Live!", "success");
+                syncToRealtime(matchId);
+                loadAssignedMatches();
+                openMatchPanel(matchId);
+            }
+        });
     }
 
     window.updateScore = async function(matchId, field, delta, current) {
@@ -424,13 +421,14 @@
 
     window.endMatch = function(matchId) {
         const select = document.getElementById(`winner-select-${matchId}`);
-        const winnerId = select?.value;
-        if (!winnerId) return showToast("Select a winner first", "error");
-        
+        if(!select) return;
+        const winnerId = select.value;
         const winnerName = select.options[select.selectedIndex].text;
 
+        if (!winnerId) return showToast("Select a winner first", "error");
+
         showConfirmDialog("End Match?", `Winner: ${winnerName}\nThis is final.`, async () => {
-            closeModal('modal-confirm');
+            document.getElementById('modal-confirm').classList.add('hidden');
             const { error } = await supabaseClient.from('matches').update({
                 status: 'Completed',
                 is_live: false,
@@ -450,7 +448,7 @@
 
     window.endPerformanceMatch = function(matchId) {
         showConfirmDialog("End Event?", "Ensure all results are saved.", async () => {
-            closeModal('modal-confirm');
+            document.getElementById('modal-confirm').classList.add('hidden');
             const { error } = await supabaseClient.from('matches').update({ status: 'Completed', is_live: false }).eq('id', matchId);
             if(!error) {
                 showToast("Event Closed", "success");
@@ -462,11 +460,33 @@
     // --- UTILS ---
     function setupConfirmModal() {
         const modal = document.getElementById('modal-confirm');
+        if(!modal) return;
+        
+        // Reset default layout
         const container = modal.querySelector('.flex.gap-3');
         container.innerHTML = `
-            <button id="btn-confirm-cancel" onclick="document.getElementById('modal-confirm').classList.add('hidden')" class="flex-1 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 font-bold rounded-xl">Cancel</button>
+            <button id="btn-confirm-cancel" class="flex-1 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 font-bold rounded-xl">Cancel</button>
             <button id="btn-confirm-yes" class="flex-1 py-3 bg-black dark:bg-white text-white dark:text-black font-bold rounded-xl shadow-lg">Yes</button>
         `;
+        
+        document.getElementById('btn-confirm-cancel').onclick = () => modal.classList.add('hidden');
+    }
+
+    function showConfirmDialog(title, msg, onConfirm) {
+        const modal = document.getElementById('modal-confirm');
+        const titleEl = document.getElementById('confirm-title');
+        const msgEl = document.getElementById('confirm-msg');
+        const yesBtn = document.getElementById('btn-confirm-yes');
+
+        if(titleEl) titleEl.innerText = title;
+        if(msgEl) msgEl.innerText = msg;
+        
+        // Unbind previous onclick to prevent stacking
+        const newYesBtn = yesBtn.cloneNode(true);
+        yesBtn.parentNode.replaceChild(newYesBtn, yesBtn);
+        
+        newYesBtn.onclick = onConfirm;
+        modal.classList.remove('hidden');
     }
 
     function injectToastContainer() {
