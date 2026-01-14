@@ -80,6 +80,7 @@
         if(!match) return;
 
         let s1 = match.score1, s2 = match.score2;
+        // Check if specific display strings exist in the JSON blob
         if (match.score_details) {
             s1 = match.score_details.team1_display || s1;
             s2 = match.score_details.team2_display || s2;
@@ -98,7 +99,7 @@
             match_type: match.match_type,
             winner_text: match.winner_text,
             performance_data: match.performance_data,
-            score_details: match.score_details,
+            score_details: match.score_details, // Sends JSON directly to live_matches
             updated_at: new Date()
         };
 
@@ -302,14 +303,17 @@
     window.updateCricketScore = async function(matchId) {
         const getVal = (id) => document.getElementById(id)?.value || 0;
         
+        // Construct the detailed JSON object for Box Cricket
         const details = {
             t1: { runs: getVal('cricket-t1-runs'), wickets: getVal('cricket-t1-wkts'), overs: getVal('cricket-t1-over') },
             t2: { runs: getVal('cricket-t2-runs'), wickets: getVal('cricket-t2-wkts'), overs: getVal('cricket-t2-over') }
         };
 
+        // Create display strings for the scoreboard
         details.team1_display = `${details.t1.runs}/${details.t1.wickets} (${details.t1.overs})`;
         details.team2_display = `${details.t2.runs}/${details.t2.wickets} (${details.t2.overs})`;
 
+        // Update matches table first
         const { error } = await supabaseClient.from('matches').update({ score_details: details }).eq('id', matchId);
 
         if (error) showToast("Save Failed", "error");
@@ -317,6 +321,8 @@
             showToast("Scoreboard Updated!", "success");
             const match = allMatchesCache.find(m => m.id === matchId);
             if(match) match.score_details = details;
+            
+            // Sync to live_matches (this now includes the JSON in the payload)
             syncToRealtime(matchId);
         }
     }
