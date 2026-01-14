@@ -200,11 +200,12 @@
                 </div>
             </div>
             <div class="flex items-center gap-2">
-                <input type="text" id="perf-input-${idx}" value="${p.result || ''}" placeholder="${unit}" 
-                    class="w-20 p-2 text-center bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded-lg font-bold text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-primary">
-                <button onclick="window.saveSingleResult('${match.id}', ${idx})" class="p-2 bg-brand-primary text-white rounded-lg shadow-md active:scale-90 transition-transform">
-                    <i data-lucide="save" class="w-4 h-4"></i>
-                </button>
+                <input type="text" 
+                    id="perf-input-${idx}" 
+                    value="${p.result || ''}" 
+                    placeholder="${unit}" 
+                    oninput="window.saveSingleResult('${match.id}', ${idx})"
+                    class="w-32 p-2 text-center bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded-lg font-bold text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-primary">
             </div>
         </div>
     `).join('');
@@ -213,10 +214,9 @@
         <div class="max-w-md mx-auto pb-10">
             <div class="text-center mb-6">
                 <h3 class="text-xl font-black text-gray-900 dark:text-white">${match.team1_name}</h3>
-                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Enter Results</p>
+                <p class="text-xs text-brand-primary font-bold animate-pulse mt-1">Autosave Enabled</p>
             </div>
             <div class="mb-6">${listHtml}</div>
-            <p class="text-center text-[10px] text-gray-400 font-bold uppercase tracking-widest">Results are saved individually</p>
         </div>`;
 }
 
@@ -327,22 +327,21 @@
         }
     }
 
-    window.saveSingleResult = async function(matchId, idx) {
-        const input = document.getElementById(`perf-input-${idx}`);
-        if(!input) return;
-        const match = allMatchesCache.find(m => m.id === matchId);
-        if(!match) return;
+   window.saveSingleResult = async function(matchId, idx) {
+    const input = document.getElementById(`perf-input-${idx}`);
+    if(!input) return;
+    const match = allMatchesCache.find(m => m.id === matchId);
+    if(!match) return;
 
-        match.performance_data[idx].result = input.value;
-        const { error } = await supabaseClient.from('matches').update({ performance_data: match.performance_data }).eq('id', matchId);
-        
-        if(error) showToast("Save Failed", "error");
-        else {
-            showToast("Saved!", "success");
-            syncToRealtime(matchId);
-        }
+    match.performance_data[idx].result = input.value;
+    const { error } = await supabaseClient.from('matches').update({ performance_data: match.performance_data }).eq('id', matchId);
+    
+    if(error) console.error("Auto-save failed", error);
+    else {
+        // Toast removed for smoother typing experience
+        syncToRealtime(matchId);
     }
-
+}
     window.promptWalkover = function(matchId, t1, t2) {
         const modal = document.getElementById('modal-confirm');
         const title = document.getElementById('confirm-title');
