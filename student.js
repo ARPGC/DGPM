@@ -352,50 +352,50 @@ window.realtimeClient = window.supabase.createClient(CONFIG_REALTIME.url, CONFIG
     // --- 5. REALTIME SUBSCRIPTION (UPDATED) ---
     // Replace your existing setupRealtimeSubscription function with this:
 
-function setupRealtimeSubscription() {
-    if (window.liveSubscription) return; 
-
-    window.liveSubscription = window.realtimeClient
-        .channel('public:urja_updates')
+// --- 5. REALTIME SUBSCRIPTION (CORRECTED) ---
+    function setupRealtimeSubscription() {
         
-        // 1. Listen for LIVE MATCH changes (Top Dashboard)
-        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'live_matches' }, (payload) => {
-            loadLiveMatches(); 
-            
-            // Also refresh modal if looking at this live match
-            const modal = document.getElementById('modal-match-details');
-            if (modal && !modal.classList.contains('hidden') && window.currentOpenMatchId === payload.new.id) {
-                window.openMatchDetails(payload.new.id);
-            }
+        // LISTENER 1: LIVE MATCHES (Uses realtimeClient, as per your fetch logic)
+        window.realtimeClient
+            .channel('public:live_matches')
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'live_matches' }, (payload) => {
+                loadLiveMatches(); 
+                
+                // Also update modal if it's open and matches this ID
+                const modal = document.getElementById('modal-match-details');
+                if (modal && !modal.classList.contains('hidden') && window.currentOpenMatchId === payload.new.id) {
+                    window.openMatchDetails(payload.new.id);
+                }
 
-            if (payload.new.status === 'Completed') {
-                loadLatestChampions();
-                showToast(`🏆 Result: ${payload.new.sport_name} finished!`);
-            }
-        })
+                if (payload.new.status === 'Completed') {
+                    loadLatestChampions();
+                    showToast(`🏆 Result: ${payload.new.sport_name} finished!`);
+                }
+            })
+            .subscribe();
 
-        // 2. Listen for ALL MATCH changes (Schedule List & Detailed Views)
-        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches' }, (payload) => {
-            console.log("Match Update Detected:", payload.new);
-            
-            // A. Refresh the Schedule List (The cards)
-            // This ensures the "100m Race" card in the list updates its status/winner instantly
-            if (typeof window.loadSchedule === 'function') {
-                window.loadSchedule();
-            }
+        // LISTENER 2: SCHEDULE & SCORES (Uses supabaseClient to fix Auth/RLS issues)
+        // This is the critical fix for your "100m Race" modal
+        supabaseClient
+            .channel('public:main_matches') 
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches' }, (payload) => {
+                console.log("✅ Score Update Received:", payload.new);
+                
+                // A. Refresh Schedule List
+                if (typeof window.loadSchedule === 'function') {
+                    window.loadSchedule();
+                }
 
-            // B. Refresh the Modal (The leaderboard view)
-            // This ensures the popup view updates while you are watching it
-            const modal = document.getElementById('modal-match-details');
-            
-            // Check if modal is open AND if it matches the updated game ID
-            if (modal && !modal.classList.contains('hidden') && window.currentOpenMatchId === payload.new.id) {
-                window.openMatchDetails(payload.new.id);
-            }
-        })
-        
-        .subscribe();
-}
+                // B. Refresh Modal (Instant Update)
+                const modal = document.getElementById('modal-match-details');
+                if (modal && !modal.classList.contains('hidden') && window.currentOpenMatchId === payload.new.id) {
+                    window.openMatchDetails(payload.new.id);
+                }
+            })
+            .subscribe((status) => {
+                console.log("Matches Listener Status:", status); // Check console to see 'SUBSCRIBED'
+            });
+    }
     // --- 6. SCHEDULE MODULE (SEARCH & FILTER FIXED) ---
    window.filterSchedule = function(view) {
     currentScheduleView = view;
