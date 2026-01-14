@@ -15,8 +15,8 @@
     const supabaseClient = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
 
     // 2. REALTIME PROJECT (Live Scores & Results - Read Only)
-    const realtimeClient = window.supabase.createClient(CONFIG_REALTIME.url, CONFIG_REALTIME.anonKey);
-
+window.realtimeClient = window.supabase.createClient(CONFIG_REALTIME.url, CONFIG_REALTIME.anonKey);
+    
     // --- STATE MANAGEMENT ---
     let currentUser = null;
     let myRegistrations = []; 
@@ -216,7 +216,7 @@
     }
 
     // A. LIVE MATCHES (CRICKET & PERFORMANCE ENABLED)
-    async function loadLiveMatches() {
+    window.loadLiveMatches = async function() {
         const container = document.getElementById('live-matches-container');
         const list = document.getElementById('live-matches-list');
         
@@ -346,30 +346,29 @@
 
     // --- 5. REALTIME SUBSCRIPTION ---
     function setupRealtimeSubscription() {
-        if (liveSubscription) return; 
+    if (window.liveSubscription) return; 
 
-        liveSubscription = realtimeClient
-            .channel('public:live_matches')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'live_matches' }, (payload) => {
-                const newData = payload.new;
-                if (!newData) return;
+    window.liveSubscription = window.realtimeClient
+        .channel('public:live_matches')
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'live_matches' }, (payload) => {
+            console.log("Change detected!", payload.new);
+            
+            // 1. Refresh the Live Matches UI immediately
+            loadLiveMatches(); 
+            
+            // 2. If the user has a match details modal open, update it too
+            const modal = document.getElementById('modal-match-details');
+            if (modal && !modal.classList.contains('hidden')) {
+                window.openMatchDetails(payload.new.id);
+            }
 
-                if (newData.status === 'Live') {
-                    loadLiveMatches();
-                } else if (newData.status === 'Completed') {
-                    loadLiveMatches();
-                    loadLatestChampions();
-                    showToast(`🏆 Result: ${newData.sport_name} finished!`);
-                }
-
-                // REFRESH SCHEDULE LIST (To re-sort LIVE events to top)
-                const scheduleView = document.getElementById('view-schedule');
-                if (scheduleView && !scheduleView.classList.contains('hidden')) {
-                    window.loadSchedule();
-                }
-            })
-            .subscribe();
-    }
+            if (payload.new.status === 'Completed') {
+                loadLatestChampions();
+                showToast(`🏆 Result: ${payload.new.sport_name} finished!`);
+            }
+        })
+        .subscribe();
+}
 
     // --- 6. SCHEDULE MODULE (SEARCH & FILTER FIXED) ---
    window.filterSchedule = function(view) {
