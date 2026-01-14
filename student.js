@@ -574,8 +574,7 @@ function setupRealtimeSubscription() {
 
     // --- MATCH DETAILS (UPDATED FOR CRICKET & PERFORMANCE) ---
     window.openMatchDetails = async function(matchId) {
-        window.currentOpenMatchId = matchId; // Saves the ID of the match currently on screen
-        const { data: match } = await supabaseClient.from('matches').select('*, sports(name, is_performance, unit)').eq('id', matchId).single();
+window.currentOpenMatchId = matchId; // <--- ADD THIS LINE (Tracks the active match)        const { data: match } = await supabaseClient.from('matches').select('*, sports(name, is_performance, unit)').eq('id', matchId).single();
         if(!match) return;
 
         const isPerf = match.sports?.is_performance;
