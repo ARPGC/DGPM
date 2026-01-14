@@ -79,27 +79,22 @@
         const { data: match } = await supabaseClient.from('matches').select('*, sports(name)').eq('id', matchId).single();
         if(!match) return;
 
-        let s1 = match.score1, s2 = match.score2;
-        if (match.score_details) {
-            s1 = match.score_details.team1_display || s1;
-            s2 = match.score_details.team2_display || s2;
-        }
-
-        // Explicitly defining the payload to ensure compatibility with live_matches table
+        // FIXED: Send raw numeric scores to avoid the "invalid input syntax for type integer" error
+        // The detailed string "10/6 (3)" will be stored in the score_details JSON column instead
         const payload = {
             id: match.id,
             sport_name: match.sports?.name || 'Unknown',
             team1_name: match.team1_name,
             team2_name: match.team2_name,
-            score1: s1,
-            score2: s2,
+            score1: match.score1, // Sending Integer
+            score2: match.score2, // Sending Integer
             status: match.status,
             is_live: match.is_live,
             round_number: match.round_number,
             match_type: match.match_type,
             winner_text: match.winner_text,
             performance_data: match.performance_data,
-            score_details: match.score_details, // Ensuring JSON is sent here
+            score_details: match.score_details, // Detailed string stored here
             updated_at: new Date().toISOString()
         };
 
@@ -301,7 +296,7 @@
     // --- ACTIONS ---
 
     window.updateCricketScore = async function(matchId) {
-        const getVal = (id) => document.getElementById(id)?.value || 0;
+        const getVal = (id) => parseInt(document.getElementById(id)?.value) || 0; // FIXED: Ensure numeric values
         
         const details = {
             t1: { runs: getVal('cricket-t1-runs'), wickets: getVal('cricket-t1-wkts'), overs: getVal('cricket-t1-over') },
@@ -311,14 +306,23 @@
         details.team1_display = `${details.t1.runs}/${details.t1.wickets} (${details.t1.overs})`;
         details.team2_display = `${details.t2.runs}/${details.t2.wickets} (${details.t2.overs})`;
 
-        const { error } = await supabaseClient.from('matches').update({ score_details: details }).eq('id', matchId);
+        // UPDATED: Sync runs to numeric score columns to maintain table consistency
+        const { error } = await supabaseClient.from('matches').update({ 
+            score_details: details,
+            score1: details.t1.runs, // Integer runs
+            score2: details.t2.runs  // Integer runs
+        }).eq('id', matchId);
 
         if (error) {
             showToast("Save Failed", "error");
         } else {
             showToast("Scoreboard Updated!", "success");
             const match = allMatchesCache.find(m => m.id === matchId);
-            if(match) match.score_details = details;
+            if(match) {
+                match.score_details = details;
+                match.score1 = details.t1.runs; // Update cache
+                match.score2 = details.t2.runs; // Update cache
+            }
             syncToRealtime(matchId);
         }
     }
@@ -508,7 +512,11 @@
             i.innerHTML = type === 'error' ? '<i data-lucide="alert-triangle" class="w-5 h-5 text-red-400"></i>' : '<i data-lucide="check-circle" class="w-5 h-5 text-green-400"></i>';
             if(window.lucide) lucide.createIcons();
             t.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-10');
-            setTimeout(() => t.classList.add('opacity-0', 'pointer-events-none', 'translate-y-10'), 3000);
+            t.classList.add('opacity-100');
+            setTimeout(() => {
+                t.classList.add('opacity-0', 'pointer-events-none', 'translate-y-10');
+                t.classList.remove('opacity-100');
+            }, 3000);
         }
     }
 
