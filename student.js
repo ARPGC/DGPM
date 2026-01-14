@@ -210,90 +210,68 @@
     }
 
     // --- 4. DASHBOARD (RESULTS ONLY) ---
-    async function loadDashboard() {
-        loadLiveMatches();
-        loadLatestChampions();
+   async function loadLiveMatches() {
+    const list = document.getElementById('live-matches-list');
+    if(!list) return;
+
+    // Fetch exclusively from the live table
+    const { data: matches } = await realtimeClient
+        .from('live_matches')
+        .select('*')
+        .eq('status', 'Live')
+        .order('updated_at', { ascending: false });
+
+    if (!matches || matches.length === 0) {
+        document.getElementById('live-matches-container')?.classList.add('hidden');
+        return;
     }
+    document.getElementById('live-matches-container')?.classList.remove('hidden');
 
-    // A. LIVE MATCHES (CRICKET & PERFORMANCE ENABLED)
-    async function loadLiveMatches() {
-        const container = document.getElementById('live-matches-container');
-        const list = document.getElementById('live-matches-list');
-        
-        if(!list) return;
+    list.innerHTML = matches.map(m => {
+        // Hide events marked as 'Admin Panel'
+        if (m.location === 'Admin Panel') return '';
 
-        const { data: matches } = await realtimeClient
-            .from('live_matches')
-            .select('*')
-            .eq('status', 'Live')
-            .order('updated_at', { ascending: false });
+        const isCricket = m.sport_name?.toLowerCase().includes('cricket');
+        const isPerf = m.performance_data && Array.isArray(m.performance_data);
 
-        if (container) {
-            if (!matches || matches.length === 0) {
-                container.classList.add('hidden'); 
-                return;
-            }
-            container.classList.remove('hidden');
-        } else if (!matches || matches.length === 0) {
-            list.innerHTML = '';
-            return;
+        let score1 = m.score1 || 0;
+        let score2 = m.score2 || 0;
+
+        // Parse Cricket JSON details
+        if (isCricket && m.score_details) {
+            score1 = m.score_details.team1_display || score1;
+            score2 = m.score_details.team2_display || score2;
         }
-        
-        list.innerHTML = matches.map(m => {
-            const isCricket = m.sport_name?.toLowerCase().includes('cricket');
-            const isPerf = m.performance_data && Array.isArray(m.performance_data);
-            
-            let s1 = m.score1 || 0;
-            let s2 = m.score2 || 0;
 
-            // Handle Cricket Scores
-            if (isCricket && m.score_details) {
-                s1 = m.score_details.t1 ? `${m.score_details.t1.runs}/${m.score_details.t1.wickets} (${m.score_details.t1.overs})` : s1;
-                s2 = m.score_details.t2 ? `${m.score_details.t2.runs}/${m.score_details.t2.wickets} (${m.score_details.t2.overs})` : s2;
-            }
+        // Parse Performance Leader
+        let liveInfo = `
+            <div class="flex items-center justify-between">
+                <div class="text-left w-5/12"><h3 class="font-black text-white truncate">${m.team1_name}</h3><p class="text-xl">${score1}</p></div>
+                <div class="text-gray-400">VS</div>
+                <div class="text-right w-5/12"><h3 class="font-black text-white truncate">${m.team2_name}</h3><p class="text-xl">${score2}</p></div>
+            </div>`;
 
-            // Handle Performance Leader
-            let perfContent = '';
-            if (isPerf) {
-                const leader = m.performance_data.find(p => p.rank === 1) || m.performance_data[0];
-                const leaderName = leader ? leader.name.split('(')[0] : 'TBD';
-                const leaderScore = leader ? leader.result : '-';
-                
-                perfContent = `
-                    <div class="text-center py-2">
-                        <div class="text-xs text-yellow-600 font-bold uppercase mb-1">Current Leader</div>
-                        <h3 class="font-black text-xl text-gray-900 dark:text-white">${leaderName}</h3>
-                        <p class="text-2xl font-black text-brand-primary dark:text-indigo-400 mt-1">${leaderScore}</p>
-                    </div>
-                `;
-            }
+        if (isPerf) {
+            const leader = m.performance_data.find(p => p.rank === 1) || m.performance_data[0];
+            liveInfo = `
+                <div class="text-center">
+                    <p class="text-xs text-yellow-500 font-bold uppercase">Current Leader</p>
+                    <h3 class="text-xl font-black text-white">${leader?.name.split('(')[0] || 'TBD'}</h3>
+                    <p class="text-2xl text-indigo-400">${leader?.result || '-'}</p>
+                </div>`;
+        }
 
-            return `
-            <div onclick="window.openMatchDetails('${m.id}')" class="cursor-pointer bg-white dark:bg-gray-800 p-5 rounded-2xl border border-red-100 dark:border-red-900/30 shadow-lg shadow-red-50/50 relative overflow-hidden mb-4 animate-fade-in active:scale-[0.98] transition-transform">
-                <div class="absolute top-0 right-0 bg-red-600 text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl animate-pulse flex items-center gap-1">
-                    <span class="w-1.5 h-1.5 bg-white rounded-full"></span> LIVE
-                </div>
+        return `
+            <div onclick="window.openMatchDetails('${m.id}')" class="bg-gray-800 p-5 rounded-2xl border border-red-900 mb-4 animate-fade-in cursor-pointer">
                 <div class="text-[10px] font-bold text-red-500 uppercase tracking-widest mb-2">${m.sport_name}</div>
-                
-                ${isPerf ? perfContent : `
-                <div class="flex items-center justify-between gap-2">
-                    <div class="text-left w-5/12">
-                        <h3 class="font-black text-base text-gray-900 dark:text-white leading-tight truncate">${m.team1_name}</h3>
-                        <p class="text-xl font-black text-gray-900 dark:text-white mt-1 ${isCricket ? 'text-sm' : 'text-3xl'}">${s1}</p>
-                    </div>
-                    <div class="text-center w-2/12"><div class="text-[10px] font-bold text-gray-300 bg-gray-50 dark:bg-gray-700 rounded-full w-8 h-8 flex items-center justify-center mx-auto">VS</div></div>
-                    <div class="text-right w-5/12">
-                        <h3 class="font-black text-base text-gray-900 dark:text-white leading-tight truncate">${m.team2_name}</h3>
-                        <p class="text-xl font-black text-gray-900 dark:text-white mt-1 ${isCricket ? 'text-sm' : 'text-3xl'}">${s2}</p>
-                    </div>
-                </div>
-                `}
-                <div class="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700 flex justify-between items-center text-xs text-gray-400 font-bold">
-                    <span class="flex items-center gap-1"><i data-lucide="map-pin" class="w-3 h-3"></i> ${m.location || 'Ground'}</span>
+                ${liveInfo}
+                <div class="mt-3 pt-3 border-t border-gray-700 flex justify-between text-xs text-gray-400">
                     <span>Round ${m.round_number || 1}</span>
+                    <span>${m.location || 'College Ground'}</span>
                 </div>
-            </div>
-        `}).join('');
+            </div>`;
+    }).join('');
+}
         if(window.lucide) lucide.createIcons();
     }
 
@@ -344,34 +322,43 @@
         `}).join('');
     }
 
-    // --- 5. REALTIME SUBSCRIPTION ---
-    function setupRealtimeSubscription() {
-        if (liveSubscription) return; 
+    // --- UPDATED REALTIME SUBSCRIPTION FOR ALL VIEWS ---
+function setupRealtimeSubscription() {
+    if (liveSubscription) return;
 
-        liveSubscription = realtimeClient
-            .channel('public:live_matches')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'live_matches' }, (payload) => {
-                const newData = payload.new;
-                if (!newData) return;
+    liveSubscription = realtimeClient
+        .channel('public:live_matches')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'live_matches' }, (payload) => {
+            const newData = payload.new;
+            if (!newData) return;
 
-                if (newData.status === 'Live') {
-                    loadLiveMatches();
-                } else if (newData.status === 'Completed') {
-                    loadLiveMatches();
-                    loadLatestChampions();
-                    showToast(`🏆 Result: ${newData.sport_name} finished!`);
-                }
+            // 1. Dashboard Update: Always refresh live widgets
+            if (newData.status === 'Live') {
+                loadLiveMatches();
+            } 
+            
+            // 2. Schedule Update: Refresh only if the user is currently on the Schedule tab
+            const scheduleView = document.getElementById('view-schedule');
+            if (scheduleView && !scheduleView.classList.contains('hidden')) {
+                window.loadSchedule();
+            }
 
-                // REFRESH SCHEDULE LIST (To re-sort LIVE events to top)
-                const scheduleView = document.getElementById('view-schedule');
-                if (scheduleView && !scheduleView.classList.contains('hidden')) {
-                    window.loadSchedule();
-                }
-            })
-            .subscribe();
-    }
+            // 3. Modal Update: If a student has the 'Details' popup open for this specific match, refresh it
+            if (currentMatchDetailsOpenId === newData.id) {
+                window.openMatchDetails(newData.id);
+            }
 
-    // --- 6. SCHEDULE MODULE (SEARCH & FILTER FIXED) ---
+            // 4. Results Update: Refresh Champions list on Dashboard
+            if (newData.status === 'Completed') {
+                loadLatestChampions();
+                showToast(`🏆 Result: ${newData.sport_name} finished!`);
+            }
+        })
+        .subscribe();
+}
+
+ // --- 6. SCHEDULE MODULE (FIXED & EXPOSED) ---
+    
     window.filterSchedule = function(view) {
         currentScheduleView = view;
         const btnUp = document.getElementById('btn-schedule-upcoming');
@@ -386,7 +373,7 @@
                 btnRes.className = "flex-1 py-2.5 rounded-lg text-xs font-bold transition-all bg-white dark:bg-gray-700 shadow-sm text-brand-primary dark:text-white";
             }
         }
-        window.loadSchedule();
+        window.loadSchedule(); // Call the exposed function
     }
 
     window.loadSchedule = async function() {
@@ -409,12 +396,13 @@
         // 2. POPULATE SPORT FILTER (If empty)
         const filterSelect = document.getElementById('schedule-sport-filter');
         if (filterSelect && filterSelect.children.length <= 1) {
-            const uniqueSports = [...new Set(matches.map(m => m.sports?.name || 'Unknown'))].sort();
+            // Get unique sport names safely
+            const uniqueSports = [...new Set(matches.map(m => m.sports?.name).filter(Boolean))].sort();
             filterSelect.innerHTML = `<option value="">All Sports</option>` + 
                 uniqueSports.map(s => `<option value="${s}">${s}</option>`).join('');
         }
 
-        // 3. APPLY FILTERS (View + Search + Sport)
+        // 3. APPLY FILTERS (View + Search + Sport + Admin Filter)
         const searchText = document.getElementById('schedule-search')?.value?.toLowerCase() || '';
         const selectedSport = filterSelect?.value || '';
 
@@ -426,14 +414,17 @@
             
             if (!isViewMatch) return false;
 
-            // B. Text Search
+            // B. Hide "Admin Panel" events (Requested Filter)
+            if (m.location === 'Admin Panel') return false;
+
+            // C. Text Search (Safe Check)
             const sName = m.sports?.name?.toLowerCase() || '';
             const t1 = m.team1_name?.toLowerCase() || '';
             const t2 = m.team2_name?.toLowerCase() || '';
             
             const searchMatch = !searchText || sName.includes(searchText) || t1.includes(searchText) || t2.includes(searchText);
 
-            // C. Sport Category Filter
+            // D. Sport Category Filter
             const sportMatch = !selectedSport || m.sports?.name === selectedSport;
 
             return searchMatch && sportMatch;
@@ -442,12 +433,13 @@
         // 4. SORTING
         if(currentScheduleView === 'upcoming') {
             filteredMatches.sort((a, b) => {
+                // Live matches always top
                 if (a.status === 'Live' && b.status !== 'Live') return -1;
                 if (a.status !== 'Live' && b.status === 'Live') return 1;
                 return new Date(a.start_time) - new Date(b.start_time);
             });
         } else {
-            // Results: Latest first
+            // Results: Latest finished first
             filteredMatches.sort((a, b) => new Date(b.start_time) - new Date(a.start_time));
         }
 
@@ -458,6 +450,8 @@
         }
 
         container.innerHTML = filteredMatches.map(m => {
+            // ... (Your existing card rendering logic remains here) ...
+            // Re-pasting standard card logic for completeness:
             const isLive = m.status === 'Live';
             const isPerf = m.sports?.is_performance;
             const isCricket = m.sports?.name?.toLowerCase().includes('cricket');
@@ -498,7 +492,10 @@
                     <span class="text-xs text-gray-500 dark:text-gray-400 font-medium uppercase">${m.sports?.name}</span>
                 </div>
                 ${isPerf ? 
-                    `<div class="text-center py-2"><h4 class="font-black text-lg text-gray-900 dark:text-white">${m.team1_name}</h4><p class="text-xs text-gray-400 mt-1">Event Details</p></div>`
+                    `<div class="text-center py-2">
+                        <h4 class="font-black text-lg text-gray-900 dark:text-white">${m.team1_name}</h4>
+                        <p class="text-xs text-gray-400 mt-1">Event Details</p>
+                     </div>`
                 : 
                     `<div class="flex items-center justify-between w-full mb-4">
                         <div class="flex-1 text-left"><h4 class="font-bold text-base text-gray-900 dark:text-white leading-tight">${m.team1_name}</h4></div>
@@ -513,7 +510,7 @@
             </div>`;
         }).join('');
         
-        lucide.createIcons();
+        if(window.lucide) lucide.createIcons();
     }
 
     // --- MATCH DETAILS (UPDATED FOR CRICKET & PERFORMANCE) ---
