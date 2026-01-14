@@ -190,35 +190,35 @@
 
     // --- PERFORMANCE UI ---
     function generatePerformanceHTML(match) {
-        const unit = match.sports?.unit || 'Result';
-        const listHtml = match.performance_data.map((p, idx) => `
-            <div class="flex items-center justify-between bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm mb-2">
-                <div class="flex items-center gap-3 overflow-hidden">
-                    <div class="w-8 h-8 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center text-xs font-bold text-gray-500 dark:text-gray-400 shrink-0">${idx + 1}</div>
-                    <div class="flex flex-col truncate">
-                        <span class="text-sm font-bold text-gray-900 dark:text-white truncate">${p.name.split('(')[0]}</span>
-                    </div>
-                </div>
-                <div class="flex items-center gap-2">
-                    <input type="text" id="perf-input-${idx}" value="${p.result || ''}" placeholder="${unit}" 
-                        class="w-20 p-2 text-center bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded-lg font-bold text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-primary">
-                    <button onclick="window.saveSingleResult('${match.id}', ${idx})" class="p-2 bg-brand-primary text-white rounded-lg shadow-md active:scale-90 transition-transform">
-                        <i data-lucide="save" class="w-4 h-4"></i>
-                    </button>
+    const unit = match.sports?.unit || 'Result';
+    const listHtml = match.performance_data.map((p, idx) => `
+        <div class="flex items-center justify-between bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm mb-2">
+            <div class="flex items-center gap-3 overflow-hidden">
+                <div class="w-8 h-8 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center text-xs font-bold text-gray-500 dark:text-gray-400 shrink-0">${idx + 1}</div>
+                <div class="flex flex-col truncate">
+                    <span class="text-sm font-bold text-gray-900 dark:text-white truncate">${p.name.split('(')[0]}</span>
                 </div>
             </div>
-        `).join('');
+            <div class="flex items-center gap-2">
+                <input type="text" id="perf-input-${idx}" value="${p.result || ''}" placeholder="${unit}" 
+                    class="w-20 p-2 text-center bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded-lg font-bold text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-primary">
+                <button onclick="window.saveSingleResult('${match.id}', ${idx})" class="p-2 bg-brand-primary text-white rounded-lg shadow-md active:scale-90 transition-transform">
+                    <i data-lucide="save" class="w-4 h-4"></i>
+                </button>
+            </div>
+        </div>
+    `).join('');
 
-        return `
-            <div class="max-w-md mx-auto pb-10">
-                <div class="text-center mb-6">
-                    <h3 class="text-xl font-black text-gray-900 dark:text-white">${match.team1_name}</h3>
-                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Enter Results</p>
-                </div>
-                <div class="mb-6">${listHtml}</div>
-                <button onclick="window.endPerformanceMatch('${match.id}')" class="w-full py-4 bg-red-500 text-white font-bold rounded-2xl shadow-lg active:scale-95">End Event</button>
-            </div>`;
-    }
+    return `
+        <div class="max-w-md mx-auto pb-10">
+            <div class="text-center mb-6">
+                <h3 class="text-xl font-black text-gray-900 dark:text-white">${match.team1_name}</h3>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Enter Results</p>
+            </div>
+            <div class="mb-6">${listHtml}</div>
+            <p class="text-center text-[10px] text-gray-400 font-bold uppercase tracking-widest">Results are saved individually</p>
+        </div>`;
+}
 
     // --- CRICKET UI ---
     function generateCricketHTML(match) {
