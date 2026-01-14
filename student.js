@@ -32,7 +32,7 @@
     document.addEventListener('DOMContentLoaded', async () => {
         if(window.lucide) lucide.createIcons();
         initTheme();
-        injectToastContainer(); // Ensure this runs first to fix console errors
+        injectToastContainer();
         setupImageUpload(); 
         setupTabSystem();
         setupConfirmModal(); 
@@ -170,8 +170,6 @@
 
         const statEl = document.getElementById('stat-matches-played');
         if(statEl) statEl.innerText = matches || 0;
-        
-        // Removed logic for 'dashboard-stats-container' as requested to simplify dashboard
     }
 
     window.logout = async function() {
@@ -211,17 +209,96 @@
         }
     }
 
-    // --- 4. DASHBOARD (RESULTS ONLY) ---
+    // --- 4. DASHBOARD (LIVE & CHAMPIONS) ---
     async function loadDashboard() {
-        // Hiding Live/Upcoming sections to focus on Medals
-        const liveContainer = document.getElementById('live-matches-container');
-        const upcomingContainer = document.getElementById('upcoming-matches-list');
+        // 1. Live Matches (Realtime DB - High Priority)
+        loadLiveMatches();
         
-        if (liveContainer) liveContainer.classList.add('hidden');
-        if (upcomingContainer) upcomingContainer.innerHTML = ''; 
-
-        // Only Load Champions
+        // 2. Champions (Realtime DB - 3 Winners)
         loadLatestChampions();
+    }
+
+    // A. LIVE MATCHES (CRICKET & PERFORMANCE ENABLED)
+    async function loadLiveMatches() {
+        const container = document.getElementById('live-matches-container');
+        const list = document.getElementById('live-matches-list');
+        
+        if(!list) return;
+
+        const { data: matches } = await realtimeClient
+            .from('live_matches')
+            .select('*')
+            .eq('status', 'Live')
+            .order('updated_at', { ascending: false });
+
+        if (container) {
+            if (!matches || matches.length === 0) {
+                container.classList.add('hidden'); 
+                return;
+            }
+            container.classList.remove('hidden');
+        } else if (!matches || matches.length === 0) {
+            list.innerHTML = '';
+            return;
+        }
+        
+        list.innerHTML = matches.map(m => {
+            const isCricket = m.sport_name?.toLowerCase().includes('cricket');
+            const isPerf = m.performance_data && Array.isArray(m.performance_data);
+            
+            let s1 = m.score1 || 0;
+            let s2 = m.score2 || 0;
+
+            // Handle Cricket Scores
+            if (isCricket && m.score_details) {
+                s1 = m.score_details.t1 ? `${m.score_details.t1.runs}/${m.score_details.t1.wickets} (${m.score_details.t1.overs})` : s1;
+                s2 = m.score_details.t2 ? `${m.score_details.t2.runs}/${m.score_details.t2.wickets} (${m.score_details.t2.overs})` : s2;
+            }
+
+            // Handle Performance Leader
+            let perfContent = '';
+            if (isPerf) {
+                // Find rank 1
+                const leader = m.performance_data.find(p => p.rank === 1) || m.performance_data[0];
+                const leaderName = leader ? leader.name.split('(')[0] : 'TBD';
+                const leaderScore = leader ? leader.result : '-';
+                
+                perfContent = `
+                    <div class="text-center py-2">
+                        <div class="text-xs text-yellow-600 font-bold uppercase mb-1">Current Leader</div>
+                        <h3 class="font-black text-xl text-gray-900 dark:text-white">${leaderName}</h3>
+                        <p class="text-2xl font-black text-brand-primary dark:text-indigo-400 mt-1">${leaderScore}</p>
+                    </div>
+                `;
+            }
+
+            return `
+            <div onclick="window.openMatchDetails('${m.id}')" class="cursor-pointer bg-white dark:bg-gray-800 p-5 rounded-2xl border border-red-100 dark:border-red-900/30 shadow-lg shadow-red-50/50 relative overflow-hidden mb-4 animate-fade-in active:scale-[0.98] transition-transform">
+                <div class="absolute top-0 right-0 bg-red-600 text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl animate-pulse flex items-center gap-1">
+                    <span class="w-1.5 h-1.5 bg-white rounded-full"></span> LIVE
+                </div>
+                <div class="text-[10px] font-bold text-red-500 uppercase tracking-widest mb-2">${m.sport_name}</div>
+                
+                ${isPerf ? perfContent : `
+                <div class="flex items-center justify-between gap-2">
+                    <div class="text-left w-5/12">
+                        <h3 class="font-black text-base text-gray-900 dark:text-white leading-tight truncate">${m.team1_name}</h3>
+                        <p class="text-xl font-black text-gray-900 dark:text-white mt-1 ${isCricket ? 'text-sm' : 'text-3xl'}">${s1}</p>
+                    </div>
+                    <div class="text-center w-2/12"><div class="text-[10px] font-bold text-gray-300 bg-gray-50 dark:bg-gray-700 rounded-full w-8 h-8 flex items-center justify-center mx-auto">VS</div></div>
+                    <div class="text-right w-5/12">
+                        <h3 class="font-black text-base text-gray-900 dark:text-white leading-tight truncate">${m.team2_name}</h3>
+                        <p class="text-xl font-black text-gray-900 dark:text-white mt-1 ${isCricket ? 'text-sm' : 'text-3xl'}">${s2}</p>
+                    </div>
+                </div>
+                `}
+                <div class="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700 flex justify-between items-center text-xs text-gray-400 font-bold">
+                    <span class="flex items-center gap-1"><i data-lucide="map-pin" class="w-3 h-3"></i> ${m.location || 'Ground'}</span>
+                    <span>Round ${m.round_number || 1}</span>
+                </div>
+            </div>
+        `}).join('');
+        if(window.lucide) lucide.createIcons();
     }
 
     // C. CHAMPIONS (REALTIME DB)
@@ -234,7 +311,8 @@
             .select('*')
             .eq('status', 'Completed')
             .not('winners_data', 'is', null) 
-            .order('updated_at', { ascending: false });
+            .order('updated_at', { ascending: false })
+            .limit(5);
 
         if(!matches || matches.length === 0) {
             container.innerHTML = '<p class="text-xs text-gray-400 italic text-center py-4">No results declared yet.</p>';
@@ -243,11 +321,9 @@
 
         container.innerHTML = matches.map(m => {
             const w = m.winners_data || {};
-            
-            // Determine Category (Junior/Senior) from match details
+            // Determine Category
             let categoryTag = '';
             const matchInfo = (m.match_type || '') + (m.team1_name || '');
-            
             if (matchInfo.includes('Junior') || matchInfo.includes('Jr')) {
                 categoryTag = `<span class="ml-2 text-[9px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-bold uppercase border border-blue-100">Junior</span>`;
             } else if (matchInfo.includes('Senior') || matchInfo.includes('Sr')) {
@@ -256,17 +332,17 @@
 
             return `
             <div class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm relative overflow-hidden mb-3">
-                <div class="flex justify-between items-center mb-3 border-b border-gray-100 dark:border-gray-700 pb-2">
+                <div class="flex justify-between items-center mb-2 border-b border-gray-50 dark:border-gray-700 pb-2">
                     <div class="flex items-center">
-                        <span class="text-xs font-black text-gray-900 dark:text-white uppercase tracking-wide">${m.sport_name}</span>
+                        <span class="text-xs font-black text-gray-400 uppercase tracking-widest">${m.sport_name}</span>
                         ${categoryTag}
                     </div>
-                    <span class="text-[9px] text-gray-400 font-medium">${new Date(m.updated_at).toLocaleDateString()}</span>
+                    <span class="text-[9px] bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-2 py-0.5 rounded font-bold">Finished</span>
                 </div>
-                <div class="space-y-2">
-                    ${w.gold ? `<div class="flex items-center gap-3 text-xs"><span class="text-lg">🥇</span> <span class="font-bold text-gray-800 dark:text-gray-200">${w.gold}</span></div>` : ''}
-                    ${w.silver ? `<div class="flex items-center gap-3 text-xs"><span class="text-lg">🥈</span> <span class="font-medium text-gray-600 dark:text-gray-400">${w.silver}</span></div>` : ''}
-                    ${w.bronze ? `<div class="flex items-center gap-3 text-xs"><span class="text-lg">🥉</span> <span class="font-medium text-gray-500 dark:text-gray-500">${w.bronze}</span></div>` : ''}
+                <div class="space-y-1">
+                    ${w.gold ? `<div class="flex items-center gap-2 text-xs font-bold"><span class="text-lg">🥇</span> <span class="text-gray-800 dark:text-gray-200">${w.gold}</span></div>` : ''}
+                    ${w.silver ? `<div class="flex items-center gap-2 text-xs font-bold"><span class="text-lg">🥈</span> <span class="text-gray-600 dark:text-gray-400">${w.silver}</span></div>` : ''}
+                    ${w.bronze ? `<div class="flex items-center gap-2 text-xs font-bold"><span class="text-lg">🥉</span> <span class="text-gray-500 dark:text-gray-500">${w.bronze}</span></div>` : ''}
                 </div>
             </div>
         `}).join('');
@@ -282,12 +358,17 @@
                 const newData = payload.new;
                 if (!newData) return;
 
-                if (newData.status === 'Completed') {
+                // REFRESH DASHBOARD WIDGETS
+                if (newData.status === 'Live') {
+                    loadLiveMatches();
+                    // Optional toast if you want
+                } else if (newData.status === 'Completed') {
+                    loadLiveMatches();
                     loadLatestChampions();
                     showToast(`🏆 Result: ${newData.sport_name} finished!`);
                 }
-                
-                // Refresh Schedule if active
+
+                // REFRESH SCHEDULE LIST (To re-sort LIVE events to top)
                 const scheduleView = document.getElementById('view-schedule');
                 if (scheduleView && !scheduleView.classList.contains('hidden')) {
                     loadSchedule();
@@ -296,10 +377,9 @@
             .subscribe();
     }
 
-    // --- 6. SCHEDULE MODULE (SEARCH & FILTER ADDED) ---
+    // --- 6. SCHEDULE MODULE (UPDATED WITH SEARCH/FILTER & CRICKET SUPPORT) ---
     window.filterSchedule = function(view) {
         currentScheduleView = view;
-        
         const btnUp = document.getElementById('btn-schedule-upcoming');
         const btnRes = document.getElementById('btn-schedule-results');
         
@@ -321,50 +401,51 @@
         
         container.innerHTML = '<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary mx-auto"></div>';
 
+        // 1. FETCH ALL DATA
         const { data: matches } = await supabaseClient
             .from('matches')
             .select('*, sports(name, icon, type, is_performance)')
             .order('start_time', { ascending: true });
 
         if (!matches || matches.length === 0) {
-            container.innerHTML = `<p class="text-gray-400 font-medium text-center py-10">No matches found.</p>`;
+            container.innerHTML = `<p class="text-gray-400 font-medium text-center">No matches found.</p>`;
             return;
         }
 
-        // 1. Populate Dropdown dynamically
-        const filterSelect = document.getElementById('schedule-sport-filter');
-        if (filterSelect && filterSelect.children.length <= 1) {
+        // 2. POPULATE SPORT FILTER (If empty)
+        const sportFilterEl = document.getElementById('schedule-sport-filter');
+        if (sportFilterEl && sportFilterEl.children.length <= 1) {
             const uniqueSports = [...new Set(matches.map(m => m.sports.name))].sort();
-            filterSelect.innerHTML = `<option value="">All Sports</option>` + 
+            sportFilterEl.innerHTML = `<option value="">All Sports</option>` + 
                 uniqueSports.map(s => `<option value="${s}">${s}</option>`).join('');
         }
 
-        // 2. Get Filter Values
-        const searchText = document.getElementById('schedule-search')?.value.toLowerCase() || '';
-        const selectedSport = filterSelect?.value || '';
+        // 3. APPLY FILTERS (View + Search + Sport)
+        const searchText = document.getElementById('schedule-search')?.value?.toLowerCase() || '';
+        const sportFilter = document.getElementById('schedule-sport-filter')?.value || '';
 
-        // 3. Apply Filters
         let filteredMatches = matches.filter(m => {
-            // View Check
-            const isCorrectView = currentScheduleView === 'upcoming' 
+            // A. View Filter
+            const isViewMatch = currentScheduleView === 'upcoming' 
                 ? ['Upcoming', 'Scheduled', 'Live'].includes(m.status)
                 : m.status === 'Completed';
             
-            if (!isCorrectView) return false;
+            if (!isViewMatch) return false;
 
-            // Search Check
-            const matchSearch = 
-                m.sports.name.toLowerCase().includes(searchText) ||
-                m.team1_name.toLowerCase().includes(searchText) ||
-                m.team2_name.toLowerCase().includes(searchText);
+            // B. Text Search
+            const sName = m.sports.name ? m.sports.name.toLowerCase() : '';
+            const t1 = m.team1_name ? m.team1_name.toLowerCase() : '';
+            const t2 = m.team2_name ? m.team2_name.toLowerCase() : '';
+            
+            const searchMatch = !searchText || sName.includes(searchText) || t1.includes(searchText) || t2.includes(searchText);
 
-            // Sport Check
-            const matchSport = selectedSport === "" || m.sports.name === selectedSport;
+            // C. Sport Category Filter
+            const sportMatch = !sportFilter || m.sports.name === sportFilter;
 
-            return matchSearch && matchSport;
+            return searchMatch && sportMatch;
         });
 
-        // 4. Sort
+        // 4. SORTING
         if(currentScheduleView === 'upcoming') {
             filteredMatches.sort((a, b) => {
                 if (a.status === 'Live' && b.status !== 'Live') return -1;
@@ -372,17 +453,20 @@
                 return new Date(a.start_time) - new Date(b.start_time);
             });
         } else {
+            // Results: Latest first
             filteredMatches.sort((a, b) => new Date(b.start_time) - new Date(a.start_time));
         }
 
+        // 5. RENDER
         if (filteredMatches.length === 0) {
-            container.innerHTML = `<p class="text-gray-400 font-medium text-center py-10">No matches found matching criteria.</p>`;
+            container.innerHTML = `<p class="text-gray-400 font-medium text-center py-4">No matches found matching criteria.</p>`;
             return;
         }
 
         container.innerHTML = filteredMatches.map(m => {
             const isLive = m.status === 'Live';
             const isPerf = m.sports.is_performance;
+            const isCricket = m.sports.name?.toLowerCase().includes('cricket');
             
             const dateObj = new Date(m.start_time);
             const timeStr = dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
@@ -404,7 +488,13 @@
                     footerText = m.winner_text || `Winner: ${m.winner_id ? 'Determined' : 'TBA'}`;
                 }
             } else {
-                footerText = isPerf ? 'Entries Open' : `${m.score1 || 0} - ${m.score2 || 0}`;
+                if (isPerf) {
+                    footerText = 'Entries Open';
+                } else if (isCricket && m.score_details) {
+                    footerText = "View Scorecard";
+                } else {
+                    footerText = `${m.score1 || 0} - ${m.score2 || 0}`;
+                }
             }
 
             return `
@@ -414,38 +504,31 @@
                     <span class="text-xs text-gray-500 dark:text-gray-400 font-medium uppercase">${m.sports.name}</span>
                 </div>
                 ${isPerf ? 
-                    `<div class="text-center py-2">
-                        <h4 class="font-black text-lg text-gray-900 dark:text-white">${m.team1_name}</h4>
-                        <p class="text-xs text-gray-400 mt-1">Event Details</p>
-                     </div>`
+                    `<div class="text-center py-2"><h4 class="font-black text-lg text-gray-900 dark:text-white">${m.team1_name}</h4><p class="text-xs text-gray-400 mt-1">Event Details</p></div>`
                 : 
                     `<div class="flex items-center justify-between w-full mb-4">
-                        <div class="flex-1 text-left">
-                            <h4 class="font-bold text-base text-gray-900 dark:text-white leading-tight">${m.team1_name}</h4>
-                        </div>
-                        <div class="shrink-0 px-3">
-                            <span class="text-[10px] font-bold text-gray-300">VS</span>
-                        </div>
-                        <div class="flex-1 text-right">
-                            <h4 class="font-bold text-base text-gray-900 dark:text-white leading-tight">${m.team2_name}</h4>
-                        </div>
+                        <div class="flex-1 text-left"><h4 class="font-bold text-base text-gray-900 dark:text-white leading-tight">${m.team1_name}</h4></div>
+                        <div class="shrink-0 px-3"><span class="text-[10px] font-bold text-gray-300">VS</span></div>
+                        <div class="flex-1 text-right"><h4 class="font-bold text-base text-gray-900 dark:text-white leading-tight">${m.team2_name}</h4></div>
                     </div>`
                 }
                 <div class="border-t border-gray-50 dark:border-gray-700 pt-3 flex justify-between items-center">
                     <span class="font-mono text-sm font-bold text-brand-primary dark:text-indigo-400">${footerText}</span>
                     <span class="text-[10px] font-bold text-gray-400 flex items-center gap-1">Details <i data-lucide="chevron-right" class="w-3 h-3"></i></span>
                 </div>
-            </div>`;
+            </div>
+            `;
         }).join('');
-        
         lucide.createIcons();
     }
 
+    // --- MATCH DETAILS (UPDATED FOR CRICKET & PERFORMANCE) ---
     window.openMatchDetails = async function(matchId) {
         const { data: match } = await supabaseClient.from('matches').select('*, sports(name, is_performance, unit)').eq('id', matchId).single();
         if(!match) return;
 
         const isPerf = match.sports.is_performance;
+        const isCricket = match.sports.name?.toLowerCase().includes('cricket');
 
         document.getElementById('md-sport-name').innerText = match.sports.name;
         document.getElementById('md-match-status').innerText = match.status;
@@ -455,15 +538,29 @@
 
         if (!isPerf) {
             document.getElementById('md-layout-team').classList.remove('hidden');
+            
+            // TEAM NAMES
             document.getElementById('md-t1-name').innerText = match.team1_name;
             document.getElementById('md-t2-name').innerText = match.team2_name;
-            document.getElementById('md-t1-score').innerText = match.score1 || '0';
-            document.getElementById('md-t2-score').innerText = match.score2 || '0';
+            
+            // SCORES (With Cricket Logic)
+            if (isCricket && match.score_details) {
+                const s1 = match.score_details.t1 || {};
+                const s2 = match.score_details.t2 || {};
+                
+                document.getElementById('md-t1-score').innerHTML = `<span class="text-2xl">${s1.runs || 0}/${s1.wickets || 0}</span><span class="text-xs block text-gray-400">(${s1.overs || 0} ov)</span>`;
+                document.getElementById('md-t2-score').innerHTML = `<span class="text-2xl">${s2.runs || 0}/${s2.wickets || 0}</span><span class="text-xs block text-gray-400">(${s2.overs || 0} ov)</span>`;
+            } else {
+                document.getElementById('md-t1-score').innerText = match.score1 || '0';
+                document.getElementById('md-t2-score').innerText = match.score2 || '0';
+            }
+
             document.getElementById('md-list-t1-title').innerText = match.team1_name;
             document.getElementById('md-list-t2-title').innerText = match.team2_name;
             loadSquadList(match.team1_id, 'md-list-t1');
             loadSquadList(match.team2_id, 'md-list-t2');
         } else {
+            // PERFORMANCE UI
             document.getElementById('md-layout-race').classList.remove('hidden');
             document.getElementById('md-race-metric-header').innerText = match.sports.unit || 'Result';
 
@@ -475,11 +572,17 @@
             if (!results || results.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="3" class="px-4 py-8 text-center text-gray-400 italic">No results available yet.</td></tr>';
             } else {
+                // Sort by result (numeric descending)
                 results.sort((a, b) => {
-                    if (a.rank && b.rank) return a.rank - b.rank;
-                    const valA = parseFloat(a.result) || 999999;
-                    const valB = parseFloat(b.result) || 999999;
-                    return valA - valB;
+                    if (a.rank && b.rank) return a.rank - b.rank; // If ranks assigned
+                    const valA = parseFloat(a.result) || 0;
+                    const valB = parseFloat(b.result) || 0;
+                    
+                    // Assuming time (race) is ascending (less is better), distance (jump) is descending.
+                    // Simple heuristic: "Race" in name ? Ascending : Descending
+                    const isRace = match.sports.name.toLowerCase().includes('race');
+                    if (isRace) return (valA === 0 ? 9999 : valA) - (valB === 0 ? 9999 : valB);
+                    return valB - valA;
                 });
 
                 tbody.innerHTML = results.map((r, index) => {
@@ -489,7 +592,10 @@
                     return `
                     <tr class="bg-white dark:bg-gray-800 border-b dark:border-gray-700">
                         <td class="px-4 py-3 font-medium text-gray-900 dark:text-white text-center">${rankIcon}</td>
-                        <td class="px-4 py-3 text-gray-600 dark:text-gray-300">${r.name || 'Unknown'}</td>
+                        <td class="px-4 py-3 text-gray-600 dark:text-gray-300">
+                            ${r.name ? r.name.split('(')[0] : 'Unknown'}
+                            <div class="text-[10px] text-gray-400">${r.name ? r.name.split('(')[1]?.replace(')','') : ''}</div>
+                        </td>
                         <td class="px-4 py-3 text-right font-mono font-bold text-brand-primary">${r.result || '-'}</td>
                     </tr>
                 `}).join('');
@@ -565,7 +671,7 @@
         container.innerHTML = '<p class="text-center text-gray-400 py-10">Scanning available squads...</p>';
 
         const filterVal = document.getElementById('team-sport-filter').value;
-        const searchText = document.getElementById('team-marketplace-search')?.value.toLowerCase() || '';
+        const searchText = document.getElementById('team-marketplace-search')?.value?.toLowerCase() || '';
 
         let query = supabaseClient
             .from('teams')
@@ -583,10 +689,10 @@
         }
 
         const validTeams = teams.filter(t => {
-            // Search Filtering
+            // 1. Team Name Search
             if (searchText && !t.name.toLowerCase().includes(searchText)) return false;
 
-            // Logic Filtering
+            // 2. Gender/Category Validation
             const isEsports = ['BGMI', 'FREE FIRE'].includes(t.sports.name);
             if (!isEsports && t.captain?.gender !== currentUser.gender) return false;
             if (!isEsports) {
@@ -604,6 +710,11 @@
         });
 
         const teamsWithCounts = await Promise.all(teamPromises);
+
+        if (teamsWithCounts.length === 0) {
+            container.innerHTML = '<p class="text-center text-gray-400 py-10">No teams found matching criteria.</p>';
+            return;
+        }
 
         container.innerHTML = teamsWithCounts.map(t => {
             const isFull = t.seatsLeft <= 0;
@@ -633,6 +744,9 @@
             </div>
         `}).join('');
     }
+
+    // ... (All other functions remain unchanged, including loadTeamLocker, leaveTeam, etc.) ...
+    // ... Copying existing functions below to ensure full file integrity ...
 
     function checkGenderEligibility(sportName, sportType) {
         if (sportType === 'Team') {
@@ -685,7 +799,6 @@
         }
     }
 
-    // FULL SQUAD VIEW IN LOCKER
     window.loadTeamLocker = async function() {
         const container = document.getElementById('locker-list');
         container.innerHTML = '<p class="text-center text-gray-400 py-10">Loading your teams...</p>';
@@ -949,7 +1062,7 @@
 
     window.showToast = function(msg, type='info') {
         const t = document.getElementById('toast-container');
-        if (!t) return; // Guard clause for missing toast container
+        if (!t) return; 
         
         const msgEl = document.getElementById('toast-msg');
         const iconEl = document.getElementById('toast-icon');
