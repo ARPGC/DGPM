@@ -144,30 +144,32 @@
     </footer>
 
     <script>
-        const supabase = supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
-        lucide.createIcons();
+    // Initialize the client with a unique name to avoid SyntaxError
+    const supabaseClient = supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
+    lucide.createIcons();
 
-        async function checkAuth() {
-            const { data: { session } } = await supabase.auth.getSession();
-            const desktopContainer = document.getElementById('auth-button-container');
-            const mobileContainer = document.getElementById('auth-button-mobile');
-            const heroActions = document.getElementById('hero-actions');
+    async function checkAuth() {
+        // Use supabaseClient instead of supabase
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        const desktopContainer = document.getElementById('auth-button-container');
+        const mobileContainer = document.getElementById('auth-button-mobile');
+        const heroActions = document.getElementById('hero-actions');
 
-            if (session) {
-                const btnHtml = `<a href="student.html" class="px-6 py-2.5 bg-brand-primary text-white text-sm font-black rounded-xl shadow-lg hover:bg-indigo-700 transition-all flex items-center gap-2 uppercase tracking-tight"><i data-lucide="layout-grid" class="w-4 h-4"></i> Dashboard</a>`;
-                desktopContainer.innerHTML = btnHtml;
-                mobileContainer.innerHTML = btnHtml;
-                heroActions.innerHTML = `<a href="student.html" class="px-8 py-4 bg-brand-primary text-white font-black rounded-2xl shadow-xl hover:scale-105 transition-all w-full sm:w-auto uppercase">Go to Dashboard</a>`;
-            } else {
-                const btnHtml = `<a href="login.html" class="px-6 py-2.5 bg-brand-primary text-white text-sm font-black rounded-xl shadow-lg hover:bg-indigo-700 transition-all uppercase tracking-tight">Login / Register</a>`;
-                desktopContainer.innerHTML = btnHtml;
-                mobileContainer.innerHTML = btnHtml;
-                heroActions.innerHTML = `<a href="login.html" class="px-8 py-4 bg-brand-primary text-white font-black rounded-2xl shadow-xl hover:scale-105 transition-all w-full sm:w-auto uppercase text-center">Start Registration</a>`;
-            }
-            lucide.createIcons();
+        if (session) {
+            const btnHtml = `<a href="student.html" class="px-6 py-2.5 bg-brand-primary text-white text-sm font-black rounded-xl shadow-lg hover:bg-indigo-700 transition-all flex items-center gap-2 uppercase tracking-tight"><i data-lucide="layout-grid" class="w-4 h-4"></i> Dashboard</a>`;
+            desktopContainer.innerHTML = btnHtml;
+            mobileContainer.innerHTML = btnHtml;
+            heroActions.innerHTML = `<a href="student.html" class="px-8 py-4 bg-brand-primary text-white font-black rounded-2xl shadow-xl hover:scale-105 transition-all w-full sm:w-auto uppercase">Go to Dashboard</a>`;
+        } else {
+            const btnHtml = `<a href="login.html" class="px-6 py-2.5 bg-brand-primary text-white text-sm font-black rounded-xl shadow-lg hover:bg-indigo-700 transition-all uppercase tracking-tight">Login / Register</a>`;
+            desktopContainer.innerHTML = btnHtml;
+            mobileContainer.innerHTML = btnHtml;
+            heroActions.innerHTML = `<a href="login.html" class="px-8 py-4 bg-brand-primary text-white font-black rounded-2xl shadow-xl hover:scale-105 transition-all w-full sm:w-auto uppercase text-center">Start Registration</a>`;
         }
+        lucide.createIcons();
+    }
 
-        document.addEventListener('DOMContentLoaded', checkAuth);
-    </script>
+    document.addEventListener('DOMContentLoaded', checkAuth);
+</script>
 </body>
 </html>
