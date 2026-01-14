@@ -73,19 +73,29 @@
         const { data: match } = await supabaseClient.from('matches').select('*, sports(name)').eq('id', matchId).single();
         if(!match) return;
 
+        // Use score_details text for display if available (Cricket), else standard score
+        let score1Display = match.score1;
+        let score2Display = match.score2;
+
+        if (match.score_details) {
+            score1Display = match.score_details.team1_display || match.score1;
+            score2Display = match.score_details.team2_display || match.score2;
+        }
+
         const payload = {
             id: match.id,
             sport_name: match.sports?.name || 'Unknown',
             team1_name: match.team1_name,
             team2_name: match.team2_name,
-            score1: match.score1 || 0,
-            score2: match.score2 || 0,
+            score1: score1Display, // Can be string for Cricket
+            score2: score2Display, // Can be string for Cricket
             status: match.status,
             is_live: match.is_live,
             round_number: match.round_number,
             match_type: match.match_type,
             winner_text: match.winner_text,
-            performance_data: match.performance_data, // NOW SYNCING PERFORMANCE DATA
+            performance_data: match.performance_data,
+            score_details: match.score_details, // Sync full details
             updated_at: new Date()
         };
 
@@ -99,14 +109,12 @@
 
         const { data: matches } = await supabaseClient
             .from('matches')
-            .select('*, sports(unit)')
+            .select('*, sports(name, unit)') // Need Name for Cricket check
             .eq('sport_id', currentSportId)
             .neq('status', 'Completed') 
             .order('start_time', { ascending: true });
 
         allMatchesCache = matches || [];
-        
-        // Sort: Live first
         allMatchesCache.sort((a, b) => (a.status === 'Live' ? -1 : 1));
 
         renderMatches(allMatchesCache);
@@ -115,15 +123,6 @@
             const match = allMatchesCache.find(m => m.id === currentLiveMatchId);
             if(match) updateLivePanelUI(match);
         }
-    }
-
-    window.filterMatches = function() {
-        const query = document.getElementById('match-search').value.toLowerCase();
-        const filtered = allMatchesCache.filter(m => 
-            (m.team1_name && m.team1_name.toLowerCase().includes(query)) ||
-            (m.team2_name && m.team2_name.toLowerCase().includes(query))
-        );
-        renderMatches(filtered);
     }
 
     function renderMatches(matches) {
@@ -136,8 +135,6 @@
 
         container.innerHTML = matches.map(m => {
             const isLive = m.status === 'Live';
-            const isPerf = m.performance_data && Array.isArray(m.performance_data);
-            
             return `
             <div class="bg-white dark:bg-gray-800 p-5 rounded-3xl border ${isLive ? 'border-green-500 shadow-lg' : 'border-gray-100 dark:border-gray-700 shadow-sm'} relative overflow-hidden mb-3">
                 ${isLive ? '<div class="absolute top-0 left-0 w-full bg-green-500 text-white text-[10px] font-bold text-center py-1 uppercase tracking-widest animate-pulse">Live Now</div>' : ''}
@@ -149,12 +146,12 @@
 
                 <div class="text-center my-4">
                     <h4 class="font-black text-lg text-gray-900 dark:text-white leading-tight">${m.team1_name}</h4>
-                    ${!isPerf ? `<div class="text-xs text-gray-400 font-bold my-1">VS</div><h4 class="font-black text-lg text-gray-900 dark:text-white leading-tight">${m.team2_name}</h4>` : ''}
+                    ${!m.performance_data ? `<div class="text-xs text-gray-400 font-bold my-1">VS</div><h4 class="font-black text-lg text-gray-900 dark:text-white leading-tight">${m.team2_name}</h4>` : ''}
                 </div>
 
                 ${isLive 
-                    ? `<button onclick="window.openMatchPanel('${m.id}')" class="w-full py-3 bg-green-600 text-white font-bold rounded-xl shadow-lg active:scale-95 transition-all text-xs">Enter Results</button>`
-                    : `<button onclick="window.startMatch('${m.id}')" class="w-full py-3 bg-black dark:bg-white text-white dark:text-black font-bold rounded-xl shadow-lg active:scale-95 transition-all text-xs">Start ${isPerf ? 'Event' : 'Match'}</button>`
+                    ? `<button onclick="window.openMatchPanel('${m.id}')" class="w-full py-3 bg-green-600 text-white font-bold rounded-xl shadow-lg active:scale-95 transition-all text-xs">Update Score</button>`
+                    : `<button onclick="window.startMatch('${m.id}')" class="w-full py-3 bg-black dark:bg-white text-white dark:text-black font-bold rounded-xl shadow-lg active:scale-95 transition-all text-xs">Start Match</button>`
                 }
             </div>`;
         }).join('');
@@ -181,22 +178,26 @@
         if (match.performance_data && Array.isArray(match.performance_data)) {
             content.innerHTML = generatePerformanceHTML(match);
         } else {
-            content.innerHTML = generateStandardHTML(match);
+            // CHECK FOR CRICKET
+            const isCricket = match.sports?.name.toLowerCase().includes('cricket');
+            if (isCricket) {
+                content.innerHTML = generateCricketHTML(match);
+            } else {
+                content.innerHTML = generateStandardHTML(match);
+            }
         }
         lucide.createIcons();
     }
 
-    // --- A. PERFORMANCE UI (Updated) ---
+    // --- A. PERFORMANCE UI ---
     function generatePerformanceHTML(match) {
         const unit = match.sports?.unit || 'Result';
-        
         const listHtml = match.performance_data.map((p, idx) => `
             <div class="flex items-center justify-between bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm mb-2">
                 <div class="flex items-center gap-3 overflow-hidden">
                     <div class="w-8 h-8 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center text-xs font-bold text-gray-500 dark:text-gray-400 shrink-0">${idx + 1}</div>
                     <div class="flex flex-col truncate">
                         <span class="text-sm font-bold text-gray-900 dark:text-white truncate">${p.name.split('(')[0]}</span>
-                        <span class="text-[10px] text-gray-400 truncate">${p.name.split('(')[1]?.replace(')', '') || ''}</span>
                     </div>
                 </div>
                 <div class="flex items-center gap-2">
@@ -213,14 +214,42 @@
             <div class="max-w-md mx-auto pb-10">
                 <div class="text-center mb-6">
                     <h3 class="text-xl font-black text-gray-900 dark:text-white">${match.team1_name}</h3>
-                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Enter ${unit} & Save</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Enter Results</p>
                 </div>
                 <div class="mb-6">${listHtml}</div>
                 <button onclick="window.endPerformanceMatch('${match.id}')" class="w-full py-4 bg-red-500 text-white font-bold rounded-2xl shadow-lg active:scale-95">End Event</button>
             </div>`;
     }
 
-    // --- B. STANDARD UI (Updated) ---
+    // --- B. CRICKET UI (NEW) ---
+    function generateCricketHTML(match) {
+        const d = match.score_details || { t1: {}, t2: {} };
+        
+        return `
+            <div class="max-w-md mx-auto pb-10">
+                <div class="bg-white dark:bg-gray-800 p-5 rounded-3xl shadow-lg mb-6">
+                    <h4 class="font-bold text-gray-900 dark:text-white mb-3 border-b border-gray-100 dark:border-gray-700 pb-2">${match.team1_name}</h4>
+                    <div class="grid grid-cols-3 gap-3 mb-3">
+                        <input type="number" id="cricket-t1-runs" value="${d.t1?.runs || ''}" placeholder="Runs" class="p-3 bg-gray-50 dark:bg-gray-700 rounded-xl text-center font-bold outline-none border border-transparent focus:border-brand-primary">
+                        <input type="number" id="cricket-t1-wkts" value="${d.t1?.wickets || ''}" placeholder="Wkts" class="p-3 bg-gray-50 dark:bg-gray-700 rounded-xl text-center font-bold outline-none border border-transparent focus:border-brand-primary">
+                        <input type="number" id="cricket-t1-over" value="${d.t1?.overs || ''}" placeholder="Overs" class="p-3 bg-gray-50 dark:bg-gray-700 rounded-xl text-center font-bold outline-none border border-transparent focus:border-brand-primary">
+                    </div>
+                    
+                    <h4 class="font-bold text-gray-900 dark:text-white mb-3 border-b border-gray-100 dark:border-gray-700 pb-2 pt-2">${match.team2_name}</h4>
+                    <div class="grid grid-cols-3 gap-3 mb-4">
+                        <input type="number" id="cricket-t2-runs" value="${d.t2?.runs || ''}" placeholder="Runs" class="p-3 bg-gray-50 dark:bg-gray-700 rounded-xl text-center font-bold outline-none border border-transparent focus:border-brand-primary">
+                        <input type="number" id="cricket-t2-wkts" value="${d.t2?.wickets || ''}" placeholder="Wkts" class="p-3 bg-gray-50 dark:bg-gray-700 rounded-xl text-center font-bold outline-none border border-transparent focus:border-brand-primary">
+                        <input type="number" id="cricket-t2-over" value="${d.t2?.overs || ''}" placeholder="Overs" class="p-3 bg-gray-50 dark:bg-gray-700 rounded-xl text-center font-bold outline-none border border-transparent focus:border-brand-primary">
+                    </div>
+
+                    <button onclick="window.updateCricketScore('${match.id}')" class="w-full py-3 bg-brand-primary text-white font-bold rounded-xl shadow-md active:scale-95">Update Scoreboard</button>
+                </div>
+
+                ${renderFinishSection(match)}
+            </div>`;
+    }
+
+    // --- C. STANDARD UI ---
     function generateStandardHTML(match) {
         return `
             <div class="flex flex-col gap-6 mb-8 w-full max-w-sm mx-auto pt-4">
@@ -228,17 +257,9 @@
                 <div class="flex items-center justify-center"><span class="bg-gray-100 dark:bg-gray-800 text-gray-400 px-3 py-1 rounded-full text-xs font-bold">VS</span></div>
                 ${renderTeamControl(match, 2)}
             </div>
-
             <div class="space-y-4 w-full max-w-sm mx-auto pb-10">
-                <button onclick="window.promptWalkover('${match.id}', '${match.team1_name}', '${match.team2_name}')" class="w-full py-4 border-2 border-dashed border-red-200 dark:border-red-900/50 text-red-500 dark:text-red-400 font-bold rounded-2xl text-xs uppercase hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors">
-                    Declare Walkover (Absent)
-                </button>
-                
-                <div class="bg-gray-900 dark:bg-white p-1 rounded-2xl">
-                    <button onclick="window.endMatch('${match.id}')" class="w-full py-4 bg-gray-800 dark:bg-gray-100 text-white dark:text-gray-900 font-bold rounded-xl active:scale-95 transition-all">
-                        Finish Match
-                    </button>
-                </div>
+                <button onclick="window.promptWalkover('${match.id}', '${match.team1_name}', '${match.team2_name}')" class="w-full py-4 border-2 border-dashed border-red-200 dark:border-red-900/50 text-red-500 dark:text-red-400 font-bold rounded-2xl text-xs uppercase hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors">Declare Walkover</button>
+                ${renderFinishSection(match)}
             </div>`;
     }
 
@@ -246,22 +267,64 @@
         const name = match[`team${teamNum}_name`];
         const score = match[`score${teamNum}`] || 0;
         const color = teamNum === 1 ? 'brand-primary' : 'pink-600';
-        const colorClass = teamNum === 1 ? 'bg-brand-primary' : 'bg-pink-600';
         
         return `
         <div class="bg-white dark:bg-gray-800 p-6 rounded-3xl shadow-lg border border-gray-100 dark:border-gray-700 flex flex-col items-center">
             <h4 class="font-black text-xl text-center text-gray-900 dark:text-white leading-tight mb-4 line-clamp-1">${name}</h4>
             <span class="text-6xl font-black text-${color} tracking-tighter mb-6">${score}</span>
             <div class="flex gap-4">
-                <button onclick="window.updateScore('${match.id}', 'score${teamNum}', -1, ${score})" class="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-gray-700 text-gray-400 text-3xl font-bold flex items-center justify-center active:scale-90 transition-transform hover:bg-gray-200 dark:hover:bg-gray-600">-</button>
-                <button onclick="window.updateScore('${match.id}', 'score${teamNum}', 1, ${score})" class="w-16 h-16 rounded-2xl ${colorClass} text-white text-3xl font-bold flex items-center justify-center shadow-lg active:scale-90 transition-transform">+</button>
+                <button onclick="window.updateScore('${match.id}', 'score${teamNum}', -1, ${score})" class="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-gray-700 text-gray-400 text-3xl font-bold flex items-center justify-center active:scale-90 transition-transform">-</button>
+                <button onclick="window.updateScore('${match.id}', 'score${teamNum}', 1, ${score})" class="w-16 h-16 rounded-2xl bg-${color} text-white text-3xl font-bold flex items-center justify-center shadow-lg active:scale-90 transition-transform">+</button>
             </div>
+        </div>`;
+    }
+
+    // Helper for Finish Section (Shared)
+    function renderFinishSection(match) {
+        return `
+        <div class="p-6 bg-gray-900 dark:bg-white rounded-[2rem] shadow-2xl relative overflow-hidden">
+            <label class="text-[10px] font-bold text-gray-400 uppercase mb-4 block tracking-wide ml-1">Declare Winner (Required)</label>
+            <select id="winner-select-${match.id}" onchange="window.enableEndBtn('${match.id}')" class="w-full p-4 bg-gray-800 dark:bg-gray-100 text-white dark:text-gray-900 border border-gray-700 dark:border-gray-200 rounded-2xl text-base font-bold outline-none mb-5 appearance-none cursor-pointer">
+                <option value="" class="text-gray-500">Select Winner...</option>
+                <option value="${match.team1_id}">${match.team1_name}</option>
+                <option value="${match.team2_id}">${match.team2_name}</option>
+            </select>
+            <button id="btn-end-${match.id}" onclick="window.endMatch('${match.id}')" disabled class="w-full py-4 bg-gray-700 dark:bg-gray-300 text-gray-500 font-bold rounded-2xl cursor-not-allowed transition-all flex items-center justify-center gap-2">
+                <i data-lucide="trophy" class="w-5 h-5"></i> Confirm & End Match
+            </button>
         </div>`;
     }
 
     // --- ACTIONS ---
 
-    // 1. Save Single Result (Performance)
+    window.updateCricketScore = async function(matchId) {
+        const getVal = (id) => document.getElementById(id)?.value || 0;
+        
+        const details = {
+            t1: { runs: getVal('cricket-t1-runs'), wickets: getVal('cricket-t1-wkts'), overs: getVal('cricket-t1-over') },
+            t2: { runs: getVal('cricket-t2-runs'), wickets: getVal('cricket-t2-wkts'), overs: getVal('cricket-t2-over') }
+        };
+
+        // Format for display string: "55/1 (5.2)"
+        details.team1_display = `${details.t1.runs}/${details.t1.wickets} (${details.t1.overs})`;
+        details.team2_display = `${details.t2.runs}/${details.t2.wickets} (${details.t2.overs})`;
+
+        const { error } = await supabaseClient
+            .from('matches')
+            .update({ score_details: details })
+            .eq('id', matchId);
+
+        if (error) showToast("Save Failed", "error");
+        else {
+            showToast("Scoreboard Updated!", "success");
+            // Update local cache manually for speed
+            const match = allMatchesCache.find(m => m.id === matchId);
+            if(match) match.score_details = details;
+            
+            syncToRealtime(matchId);
+        }
+    }
+
     window.saveSingleResult = async function(matchId, idx) {
         const input = document.getElementById(`perf-input-${idx}`);
         if(!input) return;
@@ -269,10 +332,8 @@
         const match = allMatchesCache.find(m => m.id === matchId);
         if(!match) return;
 
-        // Update local data
         match.performance_data[idx].result = input.value;
 
-        // Sync to DB
         const { error } = await supabaseClient.from('matches').update({ performance_data: match.performance_data }).eq('id', matchId);
         
         if(error) showToast("Save Failed", "error");
@@ -282,7 +343,6 @@
         }
     }
 
-    // 2. Walkover Popup Logic
     window.promptWalkover = function(matchId, t1, t2) {
         const modal = document.getElementById('modal-confirm');
         const title = document.getElementById('confirm-title');
@@ -292,10 +352,9 @@
         title.innerText = "Who is Present?";
         msg.innerText = "Select the winner (the team that is present).";
         
-        // Dynamic buttons for T1 / T2
         btnContainer.innerHTML = `
-            <button onclick="confirmWalkover('${matchId}', '${t1}', '${matchId}_1')" class="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl text-xs truncate px-2">${t1}</button>
-            <button onclick="confirmWalkover('${matchId}', '${t2}', '${matchId}_2')" class="flex-1 py-3 bg-pink-600 text-white font-bold rounded-xl text-xs truncate px-2">${t2}</button>
+            <button onclick="confirmWalkover('${matchId}', '${t1}')" class="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl text-xs truncate px-2">${t1}</button>
+            <button onclick="confirmWalkover('${matchId}', '${t2}')" class="flex-1 py-3 bg-pink-600 text-white font-bold rounded-xl text-xs truncate px-2">${t2}</button>
         `;
         
         modal.classList.remove('hidden');
@@ -303,13 +362,12 @@
 
     window.confirmWalkover = async function(matchId, winnerName) {
         const match = allMatchesCache.find(m => m.id === matchId);
-        // Determine winner ID based on name match
         const winnerId = (winnerName === match.team1_name) ? match.team1_id : match.team2_id;
 
         document.getElementById('modal-confirm').classList.add('hidden');
 
         const { error } = await supabaseClient.from('matches').update({
-            status: 'Walkover', // Or Completed, depending on your pref
+            status: 'Completed', 
             is_live: false,
             winner_id: winnerId,
             winner_text: `Winner (Walkover): ${winnerName}`
@@ -321,10 +379,9 @@
             syncToRealtime(matchId);
             closeMatchPanel();
         }
-        setupConfirmModal(); // Reset modal
+        setupConfirmModal(); 
     }
 
-    // 3. Start Match
     window.startMatch = async function(matchId) {
         const { error } = await supabaseClient.from('matches').update({ status: 'Live', is_live: true }).eq('id', matchId);
         if(!error) {
@@ -335,7 +392,6 @@
         }
     }
 
-    // 4. Update Score (Standard)
     window.updateScore = async function(matchId, field, delta, current) {
         const newVal = Math.max(0, current + delta);
         const { error } = await supabaseClient.from('matches').update({ [field]: newVal }).eq('id', matchId);
@@ -350,40 +406,57 @@
         }
     }
 
-    // 5. End Standard Match
-    window.endMatch = function(matchId) {
-        const match = allMatchesCache.find(m => m.id === matchId);
-        if(match.score1 === match.score2) return showToast("Draw! Use Golden Point/Super Over.", "error");
-        
-        const winner = match.score1 > match.score2 ? match.team1_name : match.team2_name;
-        const winnerId = match.score1 > match.score2 ? match.team1_id : match.team2_id;
+    window.enableEndBtn = function(matchId) {
+        const select = document.getElementById(`winner-select-${matchId}`);
+        const btn = document.getElementById(`btn-end-${matchId}`);
+        if(!select || !btn) return;
 
-        if(confirm(`End Match? Winner: ${winner}`)) {
-            supabaseClient.from('matches').update({
-                status: 'Completed',
-                is_live: false,
-                winner_id: winnerId,
-                winner_text: `Winner: ${winner}`
-            }).eq('id', matchId).then(({error}) => {
-                if(!error) {
-                    showToast("Match Ended", "success");
-                    syncToRealtime(matchId);
-                    closeMatchPanel();
-                }
-            });
+        if (select.value) {
+            btn.disabled = false;
+            btn.classList.remove('bg-gray-700', 'text-gray-500', 'cursor-not-allowed', 'dark:bg-gray-300');
+            btn.classList.add('bg-brand-primary', 'text-white', 'shadow-xl', 'active:scale-95');
+        } else {
+            btn.disabled = true;
+            btn.classList.add('bg-gray-700', 'text-gray-500', 'cursor-not-allowed', 'dark:bg-gray-300');
+            btn.classList.remove('bg-brand-primary', 'text-white', 'shadow-xl', 'active:scale-95');
         }
     }
 
-    // 6. End Performance Match
+    window.endMatch = function(matchId) {
+        const select = document.getElementById(`winner-select-${matchId}`);
+        const winnerId = select?.value;
+        if (!winnerId) return showToast("Select a winner first", "error");
+        
+        const winnerName = select.options[select.selectedIndex].text;
+
+        showConfirmDialog("End Match?", `Winner: ${winnerName}\nThis is final.`, async () => {
+            closeModal('modal-confirm');
+            const { error } = await supabaseClient.from('matches').update({
+                status: 'Completed',
+                is_live: false,
+                winner_id: winnerId,
+                winner_text: `Winner: ${winnerName}`
+            }).eq('id', matchId);
+
+            if(!error) {
+                showToast("Match Ended", "success");
+                syncToRealtime(matchId);
+                closeMatchPanel();
+            } else {
+                showToast("Error ending match", "error");
+            }
+        });
+    }
+
     window.endPerformanceMatch = function(matchId) {
-        if(confirm("End Event? Make sure all results are saved.")) {
-            supabaseClient.from('matches').update({ status: 'Completed', is_live: false }).eq('id', matchId).then(({error}) => {
-                if(!error) {
-                    showToast("Event Closed", "success");
-                    closeMatchPanel();
-                }
-            });
-        }
+        showConfirmDialog("End Event?", "Ensure all results are saved.", async () => {
+            closeModal('modal-confirm');
+            const { error } = await supabaseClient.from('matches').update({ status: 'Completed', is_live: false }).eq('id', matchId);
+            if(!error) {
+                showToast("Event Closed", "success");
+                closeMatchPanel();
+            }
+        });
     }
 
     // --- UTILS ---
