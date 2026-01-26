@@ -103,10 +103,14 @@ window.switchView = function(viewId) {
     if(navBtn) navBtn.classList.add('active');
 
     const titleEl = document.getElementById('page-title');
-    if(titleEl) titleEl.innerText = viewId.charAt(0).toUpperCase() + viewId.slice(1);
+    if(titleEl) {
+        if(viewId === 'manual-schedule') titleEl.innerText = 'Manual Scheduling';
+        else titleEl.innerText = viewId.charAt(0).toUpperCase() + viewId.slice(1);
+    }
 
     if(viewId === 'sports') window.loadSportsList();
     if(viewId === 'matches') { setupMatchFilters(); window.loadMatches('Scheduled'); }
+    if(viewId === 'manual-schedule') window.loadManualScheduleView();
 }
 
 // --- 7. DASHBOARD STATS ---
@@ -198,7 +202,155 @@ window.loadSportsList = async function() {
     lucide.createIcons();
 }
 
-// --- 9. SCHEDULER ---
+// --- 9. SCHEDULER & MANUAL SCHEDULE ---
+
+// NEW: Load Manual Schedule View
+window.loadManualScheduleView = async function() {
+    const sportSelect = document.getElementById('manual-sport');
+    sportSelect.innerHTML = '<option value="">Loading...</option>';
+    
+    // Fetch Sports
+    const { data: sports } = await supabaseClient.from('sports').select('id, name').order('name');
+    
+    sportSelect.innerHTML = '<option value="">-- Choose Sport --</option>';
+    if(sports) {
+        sports.forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s.id;
+            opt.innerText = s.name;
+            sportSelect.appendChild(opt);
+        });
+    }
+}
+
+// NEW: Handle Sport Change in Manual View
+window.handleManualSportChange = async function() {
+    const sportId = document.getElementById('manual-sport').value;
+    const t1Select = document.getElementById('manual-team1');
+    const t2Select = document.getElementById('manual-team2');
+    const isBye = document.getElementById('manual-is-bye').checked;
+    
+    t1Select.innerHTML = '<option value="">Loading...</option>';
+    
+    // Only clear Team 2 if NOT in bye mode (in bye mode it stays fixed)
+    if(!isBye) t2Select.innerHTML = '<option value="">Loading...</option>';
+
+    if(!sportId) {
+        t1Select.innerHTML = '<option value="">-- Select Sport First --</option>';
+        if(!isBye) t2Select.innerHTML = '<option value="">-- Select Sport First --</option>';
+        return;
+    }
+
+    // Fetch Teams for Sport (using Pagination if needed)
+    let allTeams = [];
+    let from = 0;
+    const step = 1000;
+    let hasMore = true;
+
+    while (hasMore) {
+        const { data, error } = await supabaseClient
+            .from('teams')
+            .select('id, name')
+            .eq('sport_id', sportId)
+            .order('name')
+            .range(from, from + step - 1);
+        
+        if (data && data.length > 0) {
+            allTeams = allTeams.concat(data);
+            if (data.length < step) hasMore = false; else from += step;
+        } else {
+            hasMore = false;
+        }
+    }
+
+    const opts = '<option value="">-- Select Team --</option>' + 
+                 allTeams.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+    
+    t1Select.innerHTML = opts;
+    if(!isBye) t2Select.innerHTML = opts;
+}
+
+// NEW: Toggle Bye Mode
+window.toggleManualBye = function() {
+    const isBye = document.getElementById('manual-is-bye').checked;
+    const t2Select = document.getElementById('manual-team2');
+
+    if(isBye) {
+        t2Select.value = "";
+        t2Select.disabled = true;
+        t2Select.innerHTML = '<option value="">(BYE - No Opponent)</option>';
+        t2Select.classList.add('bg-gray-100');
+    } else {
+        t2Select.disabled = false;
+        t2Select.classList.remove('bg-gray-100');
+        // Reload teams for Team 2
+        handleManualSportChange();
+    }
+}
+
+// NEW: Submit Manual Schedule
+window.submitManualSchedule = async function(e) {
+    e.preventDefault();
+    
+    const sportId = document.getElementById('manual-sport').value;
+    const matchType = document.getElementById('manual-type').value;
+    const round = document.getElementById('manual-round').value;
+    const t1Id = document.getElementById('manual-team1').value;
+    const isBye = document.getElementById('manual-is-bye').checked;
+    
+    let t2Id = document.getElementById('manual-team2').value;
+    const time = document.getElementById('manual-time').value;
+    const location = document.getElementById('manual-location').value;
+
+    if(!sportId || !t1Id) return showToast("Please select Sport and Team 1", "error");
+    
+    if(!isBye && !t2Id) return showToast("Please select Team 2", "error");
+    if(!isBye && t1Id === t2Id) return showToast("Team 1 and Team 2 cannot be the same.", "error");
+
+    const t1Name = document.getElementById('manual-team1').options[document.getElementById('manual-team1').selectedIndex].text;
+    
+    let t2Name = "BYE";
+    let status = "Completed";
+    let winnerId = t1Id;
+    let winnerText = `${t1Name} (Bye)`;
+
+    if (!isBye) {
+        t2Name = document.getElementById('manual-team2').options[document.getElementById('manual-team2').selectedIndex].text;
+        status = "Scheduled";
+        winnerId = null;
+        winnerText = null;
+    } else {
+        t2Id = null;
+    }
+
+    const payload = {
+        sport_id: parseInt(sportId),
+        match_type: matchType,
+        round_number: parseInt(round),
+        team1_id: t1Id,
+        team2_id: t2Id,
+        team1_name: t1Name,
+        team2_name: t2Name,
+        start_time: new Date(time).toISOString(),
+        location: location,
+        status: status,
+        winner_id: winnerId,
+        winner_text: winnerText,
+        is_live: false
+    };
+
+    const { error } = await supabaseClient.from('matches').insert(payload);
+
+    if(error) {
+        showToast("Failed to schedule: " + error.message, "error");
+    } else {
+        showToast("Match Published Successfully!", "success");
+        window.switchView('matches'); 
+    }
+}
+
+// --- EXISTING SCHEDULER LOGIC ---
+
 window.handleScheduleClick = async function(sportId, sportName, isPerformance, sportType, category) {
     if (isPerformance) {
         if (confirm(`Start ${sportName} (${category})?`)) await initPerformanceEvent(sportId, sportName, category);
@@ -207,10 +359,69 @@ window.handleScheduleClick = async function(sportId, sportName, isPerformance, s
     }
 }
 
+// Helper: Fetch all registrations with pagination (>1000 rows)
+async function fetchAllRegistrations(sportId) {
+    let allRegs = [];
+    let from = 0;
+    const step = 1000;
+    let hasMore = true;
+
+    while (hasMore) {
+        const { data, error } = await supabaseClient
+            .from('registrations')
+            .select('user_id, users(first_name, last_name, student_id, class_name, gender)')
+            .eq('sport_id', sportId)
+            .range(from, from + step - 1);
+
+        if (error) {
+            showToast("Error fetching regs: " + error.message, "error");
+            return [];
+        }
+
+        if (data && data.length > 0) {
+            allRegs = allRegs.concat(data);
+            if (data.length < step) hasMore = false;
+            else from += step;
+        } else {
+            hasMore = false;
+        }
+    }
+    return allRegs;
+}
+
+// Helper: Fetch all team members with pagination (>1000 rows)
+async function fetchAllTeamMembers(teamIds) {
+    let allMembers = [];
+    let from = 0;
+    const step = 1000;
+    let hasMore = true;
+
+    while (hasMore) {
+        const { data, error } = await supabaseClient
+            .from('team_members')
+            .select('team_id, users(gender)')
+            .in('team_id', teamIds)
+            .range(from, from + step - 1);
+
+        if (error) {
+            console.error("Error fetching members:", error);
+            return [];
+        }
+
+        if (data && data.length > 0) {
+            allMembers = allMembers.concat(data);
+            if (data.length < step) hasMore = false;
+            else from += step;
+        } else {
+            hasMore = false;
+        }
+    }
+    return allMembers;
+}
+
 async function initPerformanceEvent(sportId, sportName, category) {
-    const { data: regs } = await supabaseClient.from('registrations')
-        .select('user_id, users(first_name, last_name, student_id, class_name, gender)')
-        .eq('sport_id', sportId);
+    showToast("Fetching participants... please wait", "info");
+    const regs = await fetchAllRegistrations(sportId);
 
     if (!regs || regs.length === 0) return showToast("No registrations found.", "error");
 
@@ -225,7 +436,6 @@ async function initPerformanceEvent(sportId, sportName, category) {
         
         let genderMatch = true;
         if (category !== 'Global') {
-             // Flexible gender check
              if (isBoys) genderMatch = (gender.toLowerCase() === 'male' || gender.toLowerCase() === 'boy');
              else genderMatch = (gender.toLowerCase() === 'female' || gender.toLowerCase() === 'girl');
         }
@@ -260,7 +470,6 @@ async function initTournamentRound(sportId, sportName, sportType, category) {
     const intSportId = parseInt(sportId); 
     const isESport = category === 'Global';
 
-    // Check for existing active matches
     const { data: catMatches } = await supabaseClient.from('matches')
         .select('round_number, status, match_type')
         .eq('sport_id', intSportId)
@@ -272,7 +481,6 @@ async function initTournamentRound(sportId, sportName, sportType, category) {
     let nextRound = 1, candidates = [];
 
     if (!catMatches || catMatches.length === 0) {
-        // --- ROUND 1 LOGIC ---
         if (sportType === 'Individual') await supabaseClient.rpc('prepare_individual_teams', { sport_id_input: intSportId });
         await supabaseClient.rpc('auto_lock_tournament_teams', { sport_id_input: intSportId });
         
@@ -284,45 +492,24 @@ async function initTournamentRound(sportId, sportName, sportType, category) {
             if (isESport) {
                 candidates = allTeams.map(t => ({ id: t.team_id, name: t.team_name }));
             } else {
-                // IMPORTANT: Filter by Age (Junior/Senior) AND Gender (Male/Female)
-                
-                // 1. Determine requirements
                 const requiredAge = category.toLowerCase().includes('junior') ? 'junior' : 'senior';
                 const requiredGender = category.toLowerCase().includes('boys') ? 'male' : 'female';
 
-                console.log(`[DEBUG] Looking for Age: ${requiredAge}, Gender: ${requiredGender}`);
-
-                // 2. Filter teams by Age first
                 const ageFilteredTeams = allTeams.filter(t => (t.category || '').toLowerCase().trim() === requiredAge);
-                
-                // 3. Fetch genders for these teams
                 const teamIds = ageFilteredTeams.map(t => t.team_id);
                 
                 if (teamIds.length > 0) {
-                    // UPDATED: use 'team_members' table instead of 'registrations'
-                    const { data: members, error: regError } = await supabaseClient
-                        .from('team_members')
-                        .select('team_id, users(gender)')
-                        .in('team_id', teamIds);
-
-                    if (regError) {
-                        console.error("Gender Fetch Error:", regError);
-                    }
-
-                    // Map TeamID -> Gender (Male/Female)
+                    const members = await fetchAllTeamMembers(teamIds);
                     const teamGenderMap = {};
                     if(members) {
                         members.forEach(m => {
                             if(!m.users) return;
                             const g = (m.users.gender || '').toLowerCase();
-                            // Standardize gender string
                             const stdG = (g === 'male' || g === 'boy' || g === 'm') ? 'male' : 'female';
-                            // Store first member's gender as team gender
                             if (!teamGenderMap[m.team_id]) teamGenderMap[m.team_id] = stdG;
                         });
                     }
 
-                    // 4. Final Filter: Keep only matching gender
                     candidates = ageFilteredTeams.filter(t => {
                         const detectedGender = teamGenderMap[t.team_id];
                         return detectedGender === requiredGender;
@@ -331,7 +518,6 @@ async function initTournamentRound(sportId, sportName, sportType, category) {
             }
         }
     } else {
-        // --- NEXT ROUND LOGIC ---
         const lastRound = catMatches[0].round_number;
         nextRound = lastRound + 1;
         const { data: winners } = await supabaseClient.from('matches')
@@ -353,8 +539,6 @@ async function initTournamentRound(sportId, sportName, sportType, category) {
         const { data: teamDetails } = await supabaseClient.from('teams').select('id, name').in('id', validWinnerIds);
         candidates = (teamDetails || []).map(t => ({ id: t.id, name: t.name }));
     }
-
-    console.log(`[DEBUG] Final Candidates for ${category}: ${candidates.length}`);
 
     if (candidates.length < 2) return showToast(`No candidates for ${category} next round.`, "info");
 
@@ -479,14 +663,40 @@ window.loadMatches = async function(statusFilter) {
     if(!container) return;
     container.innerHTML = '<p class="col-span-3 text-center py-10">Loading...</p>';
 
-    const { data: matches } = await supabaseClient.from('matches').select('*, sports(name, is_performance)').eq('status', statusFilter).order('start_time', { ascending: true });
+    // Loop to fetch ALL matches, breaking the 1000 limit
+    let allMatches = [];
+    let from = 0;
+    const step = 1000;
+    let hasMore = true;
 
-    if (!matches || matches.length === 0) {
+    while (hasMore) {
+        const { data, error } = await supabaseClient
+            .from('matches')
+            .select('*, sports(name, is_performance)')
+            .eq('status', statusFilter)
+            .order('start_time', { ascending: true })
+            .range(from, from + step - 1);
+
+        if (error) {
+            console.error("Fetch Matches Error:", error);
+            break;
+        }
+
+        if (data && data.length > 0) {
+            allMatches = allMatches.concat(data);
+            if (data.length < step) hasMore = false;
+            else from += step;
+        } else {
+            hasMore = false;
+        }
+    }
+
+    if (!allMatches || allMatches.length === 0) {
         container.innerHTML = `<p class="col-span-3 text-center py-10 text-gray-400">No matches found.</p>`;
         return;
     }
 
-    container.innerHTML = matches.map(m => `
+    container.innerHTML = allMatches.map(m => `
         <div class="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm transition-all hover:shadow-md">
             <span class="text-[10px] font-bold bg-gray-100 px-2 py-1 rounded text-gray-500 uppercase tracking-widest">${m.sports.name}</span>
             <div class="py-4 text-center">
