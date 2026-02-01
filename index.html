@@ -152,7 +152,7 @@
                              alt="Digital Co-ordinator" 
                              class="w-full h-full rounded-full object-cover border-4 border-white shadow-md ring-4 ring-brand-primary/30 ring-offset-2">
                     </div>
-                    <h3 class="text-xl font-black text-gray-900 mb-1 text-center">Mr. Vijay Saxsena</h3>
+                    <h3 class="text-xl font-black text-gray-900 mb-1 text-center">Mr. Vijay Saxena</h3>
                     <p class="text-brand-primary text-[10px] font-extrabold uppercase tracking-widest mb-4">Digital Co-ordinator</p>
                     <p class="text-gray-500 text-xs font-medium leading-relaxed text-center">Managing digital infrastructure, live scoring, and Eco Campus integration.</p>
                 </div>
@@ -259,7 +259,7 @@
                 clearInterval(timer);
                 const container = document.getElementById("countdown-container");
                 if(container) {
-                     container.innerHTML = '<div class="px-8 py-4 bg-brand-primary text-white font-black rounded-xl uppercase tracking-widest text-xl">Event Started</div>';
+                     container.innerHTML = '<div class="px-8 py-4 bg-brand-primary text-white font-black rounded-xl uppercase tracking-widest text-xl">Event Finished</div>';
                 }
                 return;
             }
@@ -283,10 +283,10 @@
         const heroActions = document.getElementById('hero-actions');
 
         if (session) {
-            const btnHtml = `<a href="student.html" class="px-6 py-2.5 bg-brand-primary text-white text-sm font-black rounded-xl shadow-lg hover:bg-indigo-700 transition-all flex items-center gap-2 uppercase tracking-tight"><i data-lucide="layout-grid" class="w-4 h-4"></i> Dashboard</a>`;
+            const btnHtml = `<a href="student.html" class="px-6 py-2.5 bg-brand-primary text-white text-sm font-black rounded-xl shadow-lg hover:bg-indigo-700 transition-all flex items-center gap-2 uppercase tracking-tight"><i data-lucide="layout-grid" class="w-4 h-4"></i> Official Results</a>`;
             if(desktopContainer) desktopContainer.innerHTML = btnHtml;
             if(mobileContainer) mobileContainer.innerHTML = btnHtml;
-            if(heroActions) heroActions.innerHTML = `<a href="student.html" class="px-8 py-4 bg-brand-primary text-white font-black rounded-2xl shadow-xl hover:scale-105 transition-all w-full sm:w-auto uppercase">Go to Dashboard</a>`;
+            if(heroActions) heroActions.innerHTML = `<a href="student.html" class="px-8 py-4 bg-brand-primary text-white font-black rounded-2xl shadow-xl hover:scale-105 transition-all w-full sm:w-auto uppercase">View Official Results</a>`;
         } else {
             const btnHtml = `<a href="login.html" class="px-6 py-2.5 bg-brand-primary text-white text-sm font-black rounded-xl shadow-lg hover:bg-indigo-700 transition-all uppercase tracking-tight">Login / Register</a>`;
             if(desktopContainer) desktopContainer.innerHTML = btnHtml;
